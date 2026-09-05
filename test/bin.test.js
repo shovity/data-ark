@@ -1,8 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import path from 'node:path'
+import os from 'node:os'
+import { promises as fs } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 const run = promisify(execFile)
@@ -49,3 +51,54 @@ test('upload file không tồn tại báo lỗi gọn, không stack trace', asyn
   assert.match(stderr, /Lỗi:/)
   assert.doesNotMatch(stderr, /at .*\.js:\d+/)
 })
+
+test(
+  'SIGINT khi đang login: thoát 130, không tuyên bố sai về tiến độ',
+  { timeout: 10_000 },
+  async () => {
+    // HOME trỏ vào thư mục tạm cô lập để login không bao giờ chạm tới ~/.data-ark thật.
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'data-ark-sigint-'))
+
+    try {
+      const child = spawn(process.execPath, [BIN, 'login'], {
+        env: { ...process.env, HOME: home },
+      })
+
+      let stdout = ''
+      let stderr = ''
+
+      const { code } = await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          child.kill('SIGKILL')
+          reject(new Error(`Không thấy prompt api_id sau khi chờ. stdout hiện có: ${JSON.stringify(stdout)}`))
+        }, 5000)
+
+        child.stdout.on('data', (chunk) => {
+          stdout += chunk.toString()
+          if (/api_id/.test(stdout)) {
+            child.kill('SIGINT')
+          }
+        })
+
+        child.stderr.on('data', (chunk) => {
+          stderr += chunk.toString()
+        })
+
+        child.on('error', (err) => {
+          clearTimeout(timer)
+          reject(err)
+        })
+
+        child.on('exit', (exitCode) => {
+          clearTimeout(timer)
+          resolve({ code: exitCode })
+        })
+      })
+
+      assert.equal(code, 130)
+      assert.equal(stderr, '\nĐã dừng.\n')
+    } finally {
+      await fs.rm(home, { recursive: true, force: true })
+    }
+  },
+)

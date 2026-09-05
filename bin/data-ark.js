@@ -7,8 +7,24 @@ import { runUpload } from '../src/commands/upload.js'
 
 const SIGINT_EXIT_CODE = 130
 
+// Lệnh đang chạy khi Ctrl-C xảy ra — mỗi lệnh có một sự thật khác nhau về việc
+// tiến độ có được lưu hay không, nên phải biết đang ở lệnh nào mới chọn đúng câu.
+let currentCommand = null
+
+function sigintMessage(command) {
+  if (command === 'upload') {
+    return '\nĐã dừng. Tiến độ đã lưu, chạy lại lệnh cũ để đi tiếp.\n'
+  }
+
+  if (command === 'restore') {
+    return '\nĐã dừng. Chưa lưu tiến độ tải, chạy lại sẽ tải lại từ đầu.\n'
+  }
+
+  return '\nĐã dừng.\n'
+}
+
 process.on('SIGINT', () => {
-  process.stderr.write('\nĐã dừng. Tiến độ đã lưu, chạy lại lệnh cũ để đi tiếp.\n')
+  process.stderr.write(sigintMessage(currentCommand))
   process.exit(SIGINT_EXIT_CODE)
 })
 
@@ -22,6 +38,8 @@ async function main() {
     process.exitCode = 2
     return
   }
+
+  currentCommand = parsed.command
 
   switch (parsed.command) {
     case 'help':
