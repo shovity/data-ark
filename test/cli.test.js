@@ -68,3 +68,27 @@ test('joining a negative value does not swallow the flag that follows --to', () 
 test('a --to after -- stays a positional', () => {
   assert.equal(route(['data.tar', '--', '--to', '-100123']).options.to, undefined)
 })
+
+test('status is a subcommand', () => {
+  const r = route(['status'])
+  assert.equal(r.command, 'status')
+  assert.deepEqual(r.args, [])
+  assert.equal(route(['status', '--verbose']).options.verbose, true)
+})
+
+test('--to without a file only sets the destination', () => {
+  const r = route(['--to', '@my_backups'])
+  assert.equal(r.command, 'set-destination')
+  assert.deepEqual(r.args, [])
+  assert.equal(r.options.to, '@my_backups')
+  assert.equal(route(['--to', '-1001234567890']).command, 'set-destination')
+})
+
+test('--to with a file still uploads', () => {
+  assert.equal(route(['data.tar', '--to', '@my_backups']).command, 'upload')
+})
+
+test('no arguments at all is still help', () => {
+  assert.equal(route([]).command, 'help')
+  assert.equal(route(['--chunk-size', '1GB']).command, 'help')
+})

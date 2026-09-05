@@ -1,6 +1,6 @@
 import { parseArgs } from 'node:util'
 
-const SUBCOMMANDS = new Set(['login', 'logout', 'restore', 'help'])
+const SUBCOMMANDS = new Set(['login', 'logout', 'restore', 'status', 'help'])
 
 const OPTIONS = {
   to: { type: 'string' },
@@ -17,6 +17,8 @@ Usage:
   npx data-ark login                        Log in to Telegram, only needed once
   npx data-ark <file>                       Split a file and upload it to Telegram
   npx data-ark restore <backup-id>          Download the chunks and reassemble the file
+  npx data-ark status                       Show the account, the destination and unfinished backups
+  npx data-ark --to <chat>                  Set the destination without uploading anything
   npx data-ark logout                       Remove the saved session
 
 Options:
@@ -62,6 +64,12 @@ export function route(argv) {
   })
 
   const [first, ...rest] = positionals
+
+  // `data-ark --to @chan` with no file is not a malformed upload, it is someone changing
+  // where the next upload goes. Help would be an unhelpful answer to a clear request.
+  if (first === undefined && values.to && !values.help) {
+    return { command: 'set-destination', args: [], options: values }
+  }
 
   if (values.help || first === undefined || first === 'help') {
     return { command: 'help', args: [], options: values }

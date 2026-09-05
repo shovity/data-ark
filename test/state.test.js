@@ -4,7 +4,15 @@ import { promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-import { stateKey, loadState, saveState, markChunkDone, clearState, stateDir } from '../src/state.js'
+import {
+  stateKey,
+  loadState,
+  saveState,
+  markChunkDone,
+  clearState,
+  stateDir,
+  listStates,
+} from '../src/state.js'
 
 async function tempDir() {
   return await fs.mkdtemp(path.join(os.tmpdir(), 'data-ark-state-'))
@@ -95,4 +103,22 @@ test('clearState removes the state and stays quiet if it is already gone', async
   await clearState('k1', dir)
 
   assert.equal(await loadState('k1', dir), null)
+})
+
+test('listStates returns every unfinished backup and skips unreadable files', async () => {
+  const dir = await tempDir()
+  await saveState('aaa', sampleState({ id: 'ark-1' }), dir)
+  await saveState('bbb', sampleState({ id: 'ark-2', path: '/home/ai/vm.qcow2' }), dir)
+  await fs.writeFile(path.join(stateDir(dir), 'ccc.json'), '{ not json')
+
+  const states = await listStates(dir)
+
+  assert.deepEqual(
+    states.map((s) => s.id).sort(),
+    ['ark-1', 'ark-2'],
+  )
+})
+
+test('listStates on a machine that has never run an upload returns nothing', async () => {
+  assert.deepEqual(await listStates(await tempDir()), [])
 })

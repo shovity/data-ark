@@ -50,3 +50,27 @@ export async function clearState(key, configDir = defaultConfigDir()) {
     if (err.code !== 'ENOENT') throw err
   }
 }
+
+// status needs every unfinished backup at once. A state file that cannot be read is skipped
+// rather than fatal, for the same reason loadState returns null: one corrupt file must not
+// hide the other backups still waiting to be finished.
+export async function listStates(configDir = defaultConfigDir()) {
+  let names
+  try {
+    names = await fs.readdir(stateDir(configDir))
+  } catch (err) {
+    if (err.code === 'ENOENT') return []
+    throw err
+  }
+
+  const states = []
+
+  for (const name of names) {
+    if (!name.endsWith('.json')) continue
+
+    const state = await loadState(name.slice(0, -'.json'.length), configDir)
+    if (state) states.push(state)
+  }
+
+  return states
+}

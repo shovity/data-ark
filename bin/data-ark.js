@@ -3,6 +3,8 @@ import { route, HELP } from '../src/cli.js'
 import { runLogin } from '../src/commands/login.js'
 import { runLogout } from '../src/commands/logout.js'
 import { runRestore } from '../src/commands/restore.js'
+import { runSetDestination } from '../src/commands/set-destination.js'
+import { runStatus } from '../src/commands/status.js'
 import { runUpload } from '../src/commands/upload.js'
 
 const SIGINT_EXIT_CODE = 130
@@ -52,6 +54,14 @@ async function main() {
 
     case 'logout':
       await runLogout()
+      return
+
+    case 'status':
+      await runStatus(parsed.options)
+      return
+
+    case 'set-destination':
+      await runSetDestination(parsed.options)
       return
 
     case 'upload':

@@ -7,6 +7,8 @@ Split large files into 1.8GB chunks, store them on Telegram, and restore them in
 ```bash
 npx data-ark login                        # once only
 npx data-ark data.tar --to @my_backups    # the destination is remembered
+npx data-ark --to @my_backups             # only change the destination, upload nothing
+npx data-ark status                       # account, destination, unfinished backups
 npx data-ark data.tar                     # from the second run on
 npx data-ark restore ark-20260905-7f3a91
 ```
