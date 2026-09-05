@@ -99,6 +99,17 @@ export async function downloadToFile(client, message, fd, { offset, onProgress, 
 
         if (done >= length) break
       }
+
+      // A stream that ends before the slice's own boundary is a short delivery, not a
+      // completed slice — without this, a hole here would surface only as a digest
+      // mismatch, telling the user their data is corrupt when it was simply cut short.
+      // Checked inside the retried callback so a transient short stream is retried, and a
+      // stream that yields nothing at all still counts as a failure worth retrying.
+      if (done < length) {
+        throw new Error(
+          `Slice ${index + 1}/${sliceCount} of message ${message?.id} ended after ${done} of ${length} bytes.`,
+        )
+      }
     }, retryOptions)
   }
 

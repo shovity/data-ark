@@ -430,3 +430,35 @@ test('a document with no size is refused rather than quietly downloaded as nothi
   )
   await handle.close()
 })
+
+test('a stream that ends short of the slice boundary is retried, not accepted as done', async () => {
+  // The document claims 1000 bytes but the stream always stops at 400. A short delivery
+  // must not be waved through as a completed slice just because the stream ended cleanly.
+  const content = randomBytes(1000)
+  const { handle } = await tempFd(1000)
+  const client = fakeClient(content.subarray(0, 400), { partSize: 100 })
+
+  await assert.rejects(
+    () =>
+      downloadToFile(client, fakeMessage(1000), handle.fd, {
+        offset: 0,
+        retryOptions: { attempts: 2, baseDelayMs: 0, sleep: async () => {} },
+      }),
+    /ended after 400 of 1000 bytes/,
+  )
+  await handle.close()
+  assert.equal(client.calls.length, 2, 'the short stream is retried up to the attempt budget')
+})
+
+test('a stream that delivers exactly the slice length still succeeds', async () => {
+  const content = randomBytes(1000)
+  const { file, handle } = await tempFd(1000)
+  const client = fakeClient(content, { partSize: 100 })
+
+  const result = await downloadToFile(client, fakeMessage(1000), handle.fd, { offset: 0 })
+
+  await handle.close()
+  assert.equal(result.size, 1000)
+  assert.equal(result.sha256, createHash('sha256').update(content).digest('hex'))
+  assert.deepEqual(await fs.readFile(file), content)
+})
