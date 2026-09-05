@@ -242,3 +242,101 @@ test('upload xong thì xoá state', async () => {
   const key = stateKey(path.resolve(ws.filePath), stat.size, stat.mtimeMs)
   assert.equal(await loadState(key, ws.configDir), null)
 })
+
+test('--concurrency không phải số thì báo lỗi rõ ràng', async () => {
+  const ws = await tempWorkspace(1000)
+  const client = fakeClient()
+
+  await assert.rejects(
+    () =>
+      runUpload(
+        ws.filePath,
+        { to: '@kho', 'chunk-size': '400', concurrency: 'abc' },
+        { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
+      ),
+    /--concurrency/,
+  )
+})
+
+test('--concurrency bằng 0 thì báo lỗi rõ ràng thay vì treo vô hạn', async () => {
+  const ws = await tempWorkspace(1000)
+  const client = fakeClient()
+
+  await assert.rejects(
+    () =>
+      runUpload(
+        ws.filePath,
+        { to: '@kho', 'chunk-size': '400', concurrency: '0' },
+        { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
+      ),
+    /--concurrency/,
+  )
+})
+
+test('resume với --to khác đích cũ thì bị chặn, không tách backup ra hai đích', async () => {
+  const ws = await tempWorkspace(1000)
+
+  const failing = fakeClient({ failOnChunk: 1 })
+  await assert.rejects(() =>
+    runUpload(ws.filePath, { to: '@kho', 'chunk-size': '400' }, {
+      ...deps(failing),
+      configDir: ws.configDir,
+      partSize: 128,
+      silent: true,
+    }),
+  )
+
+  const retry = fakeClient()
+  await assert.rejects(
+    () =>
+      runUpload(ws.filePath, { to: '@kho_khac', 'chunk-size': '400' }, {
+        ...deps(retry),
+        configDir: ws.configDir,
+        partSize: 128,
+        silent: true,
+      }),
+    (err) => {
+      assert.match(err.message, /@kho_khac/)
+      assert.match(err.message, /--to/)
+      assert.match(err.message, /\.json/)
+      return true
+    },
+  )
+
+  assert.equal(retry.messages.length, 0, 'không được gửi bất cứ gì khi bị chặn')
+
+  const config = JSON.parse(await fs.readFile(path.join(ws.configDir, 'config.json'), 'utf8'))
+  assert.equal(config.defaultChat, '@kho', 'không được ghi đè đích mặc định khi bị chặn')
+})
+
+test('resume với --chunk-size khác thì bắt đầu backup mới, không giữ done cũ', async () => {
+  const ws = await tempWorkspace(1000)
+
+  const failing = fakeClient({ failOnChunk: 1 })
+  await assert.rejects(() =>
+    runUpload(ws.filePath, { to: '@kho', 'chunk-size': '400' }, {
+      ...deps(failing),
+      configDir: ws.configDir,
+      partSize: 128,
+      silent: true,
+    }),
+  )
+
+  const stat = await fs.stat(ws.filePath)
+  const key = stateKey(path.resolve(ws.filePath), stat.size, stat.mtimeMs)
+  const idLanDau = (await loadState(key, ws.configDir)).id
+
+  const retry = fakeClient()
+  const result = await runUpload(ws.filePath, { to: '@kho', 'chunk-size': '250' }, {
+    ...deps(retry),
+    configDir: ws.configDir,
+    partSize: 128,
+    silent: true,
+  })
+
+  assert.notEqual(result.id, idLanDau, 'phải là backup id mới')
+  assert.equal(result.chunks, 4)
+
+  const chunkMessages = retry.messages.filter((m) => !m.fileName.endsWith('.manifest.json'))
+  assert.equal(chunkMessages.length, 4, 'phải upload lại từ đầu, không giữ chunk done cũ')
+})

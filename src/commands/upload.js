@@ -15,7 +15,7 @@ import {
   serializeManifest,
 } from '../manifest.js'
 import { createProgress, formatBytes } from '../progress.js'
-import { clearState, loadState, markChunkDone, saveState, stateKey } from '../state.js'
+import { clearState, loadState, markChunkDone, saveState, stateDir, stateKey } from '../state.js'
 import { uploadRange } from '../uploader.js'
 
 async function realSendChunk(client, peer, { inputFile, fileName, caption }) {
@@ -66,16 +66,32 @@ export async function runUpload(filePath, options = {}, deps = {}) {
   const chunkSize = options['chunk-size'] ? parseSize(options['chunk-size']) : DEFAULT_CHUNK_SIZE
   const concurrency = options.concurrency ? Number(options.concurrency) : 8
 
-  if (options.to) {
-    await saveConfig({ ...config, defaultChat: String(chat) }, configDir)
+  if (!Number.isInteger(concurrency) || concurrency < 1) {
+    throw new Error(
+      `--concurrency không hợp lệ: "${options.concurrency}". Phải là số nguyên từ 1 trở lên.`,
+    )
   }
 
   const chunks = planChunks(stat.size, chunkSize)
   const key = stateKey(absPath, stat.size, stat.mtimeMs)
 
   let state = await loadState(key, configDir)
+  const resuming = Boolean(state) && state.chunkSize === chunkSize
 
-  if (!state || state.chunkSize !== chunkSize) {
+  if (resuming && state.chat !== String(chat)) {
+    const stateFile = path.join(stateDir(configDir), `${key}.json`)
+    throw new Error(
+      `Backup dở dang này đang gửi vào ${state.chat}, nhưng lệnh hiện tại chỉ định đích ${chat} — ` +
+        `không thể tách một backup ra hai đích khác nhau. Chạy lại không kèm --to để tiếp tục gửi vào ` +
+        `${state.chat}, hoặc xoá ${stateFile} rồi chạy lại để bắt đầu backup mới vào ${chat}.`,
+    )
+  }
+
+  if (options.to) {
+    await saveConfig({ ...config, defaultChat: String(chat) }, configDir)
+  }
+
+  if (!resuming) {
     state = {
       id: newBackupId(),
       chat: String(chat),
