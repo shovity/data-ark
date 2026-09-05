@@ -29,7 +29,7 @@ export async function downloadToFile(client, message, fd, { offset, onProgress }
   const hash = createHash('sha256')
   let written = 0
 
-  for await (const buffer of client.iterDownload({ file: document, requestSize: PART_SIZE })) {
+  for await (const buffer of client.iterDownload({ file: message.media, requestSize: PART_SIZE })) {
     await writeExactly(fd, buffer, offset + written)
     hash.update(buffer)
     written += buffer.length

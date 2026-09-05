@@ -202,7 +202,7 @@ test('tiến trình chunk cập nhật theo dữ liệu đã tải, không kẹt
 
   const client = {
     iterDownload({ file }) {
-      assert.equal(file, document)
+      assert.equal(file, message.media)
       return (async function* () {
         yield bytes.subarray(0, 300)
         yield bytes.subarray(300, 600)
@@ -262,17 +262,21 @@ test('chunk về thiếu byte thì báo đúng số byte lệch, không chỉ n�
 test('tên trong manifest là ".." thì từ chối và bảo dùng --out', async () => {
   const backup = fakeBackup({ name: '..' })
   const { dir, configDir } = await tempConfig()
+
+  // Chạy trong một thư mục con để thư mục cha ("..") là thư mục ta tự dựng,
+  // không phải os.tmpdir() vốn bị các file test chạy song song ghi vào.
+  const lamViec = path.join(dir, 'lam-viec')
+  await fs.mkdir(lamViec)
+  const truoc = new Set(await fs.readdir(dir))
+
   const cwd = process.cwd()
-  process.chdir(dir)
+  process.chdir(lamViec)
 
   try {
     await assert.rejects(() => runRestore(backup.id, {}, deps(fakeClient(backup), configDir)), /--out/)
 
-    const files = await fs.readdir(path.dirname(dir))
-    assert.ok(
-      !files.some((f) => f.endsWith('.partial')),
-      'không được tạo .partial ở thư mục cha',
-    )
+    const moi = (await fs.readdir(dir)).filter((f) => !truoc.has(f))
+    assert.deepEqual(moi, [], `không được tạo gì ở thư mục cha, nhưng thấy: ${moi.join(', ')}`)
   } finally {
     process.chdir(cwd)
   }

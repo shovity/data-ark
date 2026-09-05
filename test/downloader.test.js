@@ -5,6 +5,10 @@ import { promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
+import bigInt from 'big-integer'
+import { Api } from 'telegram'
+import { getFileInfo } from 'telegram/Utils.js'
+
 import { downloadToFile } from '../src/downloader.js'
 
 function fakeMessage(document = { id: 'doc-1' }) {
@@ -58,15 +62,41 @@ test('ghi vào đúng offset giữa file', async () => {
   assert.deepEqual(onDisk.subarray(1000), noiDung)
 })
 
-test('truyền document của message cho iterDownload', async () => {
+test('truyền media của message cho iterDownload', async () => {
   const { handle } = await tempFd(10)
-  const document = { id: 'doc-abc' }
+  const message = fakeMessage({ id: 'doc-abc' })
   const client = fakeClient([Buffer.alloc(10)])
 
-  await downloadToFile(client, fakeMessage(document), handle.fd, { offset: 0 })
+  await downloadToFile(client, message, handle.fd, { offset: 0 })
 
   await handle.close()
-  assert.equal(client.calls[0].file, document)
+  assert.equal(client.calls[0].file, message.media)
+})
+
+test('thứ truyền cho iterDownload phải cast được thành InputFileLocation', async () => {
+  // GramJS chỉ suy ra được location từ MessageMediaDocument, không phải từ
+  // Document trần. Client giả chấp nhận mọi thứ nên không bắt được sai lệch
+  // này — phải hỏi chính getFileInfo của GramJS.
+  const { handle } = await tempFd(10)
+  const document = new Api.Document({
+    id: bigInt(123),
+    accessHash: bigInt(456),
+    fileReference: Buffer.alloc(8),
+    date: 0,
+    mimeType: 'application/octet-stream',
+    size: bigInt(10),
+    dcId: 2,
+    attributes: [new Api.DocumentAttributeFilename({ fileName: 'ark.part0001' })],
+  })
+  const message = { id: 999, media: new Api.MessageMediaDocument({ document }) }
+  const client = fakeClient([Buffer.alloc(10)])
+
+  await downloadToFile(client, message, handle.fd, { offset: 0 })
+  await handle.close()
+
+  const info = getFileInfo(client.calls[0].file)
+  assert.equal(info.location.className, 'InputDocumentFileLocation')
+  assert.equal(info.dcId, 2)
 })
 
 test('onProgress cộng dồn đúng tổng số byte', async () => {
