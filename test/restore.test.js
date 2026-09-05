@@ -324,3 +324,103 @@ test('an assembled file of the wrong length errors instead of being renamed', as
   assert.ok(files.includes('out.tar.partial'))
   assert.ok(!files.includes('out.tar'))
 })
+
+test('every chunk download is handed retry options it can announce through', async () => {
+  const backup = fakeBackup()
+  const { dir, configDir } = await tempConfig()
+  const out = path.join(dir, 'out.tar')
+  const base = deps(fakeClient(backup), configDir)
+  const handed = []
+
+  await runRestore(backup.id, { out }, {
+    ...base,
+    downloadChunk: (c, message, handle, offset, onProgress, retryOptions) => {
+      handed.push(retryOptions)
+      return base.downloadChunk(c, message, handle, offset, onProgress)
+    },
+  })
+
+  assert.equal(handed.length, backup.manifest.chunks.length)
+  for (const options of handed) {
+    assert.equal(typeof options?.onRetry, 'function', 'a retry nobody can see reads as a hang')
+  }
+})
+
+test('a short retry is announced with the error that caused it', async () => {
+  const backup = fakeBackup()
+  const { dir, configDir } = await tempConfig()
+  const out = path.join(dir, 'out.tar')
+  const base = deps(fakeClient(backup), configDir)
+  const written = []
+
+  await runRestore(backup.id, { out }, {
+    ...base,
+    silent: false,
+    log: () => {},
+    writeErr: (line) => written.push(line),
+    downloadChunk: (c, message, handle, offset, onProgress, retryOptions) => {
+      retryOptions.onRetry(new Error('-503: Timeout (caused by upload.GetFile)'), 2, 4000)
+      return base.downloadChunk(c, message, handle, offset, onProgress)
+    },
+  })
+
+  const text = written.join('')
+  assert.match(text, /Timeout/)
+  assert.match(text, /retry 2/)
+})
+
+test('a wait longer than a minute says data-ark is waiting, not stuck', async () => {
+  const backup = fakeBackup()
+  const { dir, configDir } = await tempConfig()
+  const out = path.join(dir, 'out.tar')
+  const base = deps(fakeClient(backup), configDir)
+  const written = []
+
+  await runRestore(backup.id, { out }, {
+    ...base,
+    silent: false,
+    log: () => {},
+    writeErr: (line) => written.push(line),
+    downloadChunk: (c, message, handle, offset, onProgress, retryOptions) => {
+      retryOptions.onRetry(new Error('FLOOD_WAIT_3600'), 1, 3_600_000)
+      return base.downloadChunk(c, message, handle, offset, onProgress)
+    },
+  })
+
+  const text = written.join('')
+  assert.match(text, /1h/)
+  assert.match(text, /leave it running/)
+})
+
+test('realDownloadChunk carries the retry options through to the downloader', async () => {
+  const backup = fakeBackup({ total: 100, chunkSize: 100 })
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'data-ark-restore-'))
+  const handle = await fs.open(path.join(dir, 'out.bin'), 'w+')
+  const attempts = []
+  let failed = false
+
+  const client = {
+    iterDownload() {
+      return (async function* () {
+        if (!failed) {
+          failed = true
+          throw new Error('-503: Timeout (caused by upload.GetFile)')
+        }
+        yield backup.content
+      })()
+    },
+  }
+
+  const result = await realDownloadChunk(
+    client,
+    { id: 1, media: { document: { id: 'd' } } },
+    handle,
+    0,
+    () => {},
+    { baseDelayMs: 0, sleep: async () => {}, onRetry: (err) => attempts.push(err.message) },
+  )
+
+  await handle.close()
+  assert.equal(result.size, 100)
+  assert.deepEqual(attempts, ['-503: Timeout (caused by upload.GetFile)'])
+})
