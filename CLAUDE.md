@@ -50,6 +50,14 @@ records — names on stderr every backup id it drops, even when the caller asked
 
 `src/uploader.js` and `src/downloader.js` know about byte ranges and Telegram's
 part APIs; they must not mention CLI flags like `--chunk-size` in their errors.
+
+`src/downloader.js` fetches a chunk as 8MB slices through a pool of concurrent
+`iterDownload` streams, because one stream is one request at a time and that caps a restore
+at round-trip latency — about 3 MB/s — however much bandwidth is going spare. Bytes
+therefore land out of order, so the chunk's sha256 is taken by reading the assembled range
+back off disk once every slice is in. That check is about assembly, not media: the read may
+be served from the page cache.
+
 `src/commands/*.js` own the user-facing narrative. `src/caption.js`,
 `src/chunking.js`, `src/manifest.js`, `src/progress.js`, `src/retry.js`,
 `src/state.js` and `src/config.js` are pure enough to test without a client.

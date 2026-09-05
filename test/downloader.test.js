@@ -411,6 +411,10 @@ test('a slice that fails resumes at its own watermark', async () => {
 
   const result = await downloadToFile(client, fakeMessage(content.length), handle.fd, {
     offset: 0,
+    // Pinned to one worker: this test is about a single slice's retry watermark, not about
+    // cross-slice concurrency, and with two slices in flight calls[1] would be slice two's
+    // first request rather than slice one's retry.
+    concurrency: 1,
     retryOptions: { baseDelayMs: 0, sleep: async () => {} },
   })
 
@@ -461,4 +465,163 @@ test('a stream that delivers exactly the slice length still succeeds', async () 
   assert.equal(result.size, 1000)
   assert.equal(result.sha256, createHash('sha256').update(content).digest('hex'))
   assert.deepEqual(await fs.readFile(file), content)
+})
+
+test('slices are fetched concurrently, not one after another', async () => {
+  const content = randomBytes(SLICE_SIZE * 4)
+  const { handle } = await tempFd(content.length)
+  let inFlight = 0
+  let peak = 0
+
+  const client = {
+    iterDownload(params) {
+      const from = Number(params.offset ?? 0)
+      inFlight += 1
+      peak = Math.max(peak, inFlight)
+
+      return (async function* () {
+        try {
+          for (let at = from; at < content.length; at += 512 * 1024) {
+            await new Promise((resolve) => setImmediate(resolve))
+            yield content.subarray(at, at + 512 * 1024)
+          }
+        } finally {
+          inFlight -= 1
+        }
+      })()
+    },
+  }
+
+  await downloadToFile(client, fakeMessage(content.length), handle.fd, { offset: 0, concurrency: 4 })
+
+  await handle.close()
+  assert.equal(peak, 4, 'four slices must be in flight at once')
+})
+
+test('a chunk of one slice does not start eight workers', async () => {
+  const content = randomBytes(1000)
+  const { handle } = await tempFd(1000)
+  let inFlight = 0
+  let peak = 0
+
+  const client = {
+    iterDownload(params) {
+      const from = Number(params.offset ?? 0)
+      inFlight += 1
+      peak = Math.max(peak, inFlight)
+
+      return (async function* () {
+        try {
+          yield content.subarray(from)
+        } finally {
+          inFlight -= 1
+        }
+      })()
+    },
+  }
+
+  await downloadToFile(client, fakeMessage(1000), handle.fd, { offset: 0, concurrency: 8 })
+
+  await handle.close()
+  assert.equal(peak, 1)
+})
+
+test('one slice failing for good fails the chunk and reports that error', async () => {
+  const content = randomBytes(SLICE_SIZE * 3)
+  const { handle } = await tempFd(content.length)
+
+  const client = {
+    iterDownload(params) {
+      const from = Number(params.offset ?? 0)
+      return (async function* () {
+        if (from >= SLICE_SIZE && from < SLICE_SIZE * 2) throw new Error('slice two is gone')
+        for (let at = from; at < content.length; at += 512 * 1024) {
+          yield content.subarray(at, at + 512 * 1024)
+        }
+      })()
+    },
+  }
+
+  await assert.rejects(
+    () => downloadToFile(client, fakeMessage(content.length), handle.fd, {
+      offset: 0,
+      concurrency: 3,
+      retryOptions: { attempts: 2, baseDelayMs: 0, sleep: async () => {} },
+    }),
+    /slice two is gone/,
+  )
+
+  await handle.close()
+})
+
+test('a failing slice leaves no unhandled rejection behind', async () => {
+  // A worker whose promise rejects while nobody is awaiting it yet becomes an
+  // unhandledRejection and buries the real error. uploadRange learned this the hard way.
+  const content = randomBytes(SLICE_SIZE * 4)
+  const { handle } = await tempFd(content.length)
+  const unhandled = []
+  const record = (err) => unhandled.push(err)
+  process.on('unhandledRejection', record)
+
+  const client = {
+    iterDownload(params) {
+      const from = Number(params.offset ?? 0)
+      return (async function* () {
+        if (from > 0) throw new Error('every slice but the first is gone')
+        for (let at = from; at < content.length; at += 512 * 1024) {
+          yield content.subarray(at, at + 512 * 1024)
+        }
+      })()
+    },
+  }
+
+  await assert.rejects(
+    () => downloadToFile(client, fakeMessage(content.length), handle.fd, {
+      offset: 0,
+      concurrency: 4,
+      retryOptions: { attempts: 1, baseDelayMs: 0, sleep: async () => {} },
+    }),
+    /every slice but the first is gone/,
+  )
+
+  await new Promise((resolve) => setImmediate(resolve))
+  process.off('unhandledRejection', record)
+
+  await handle.close()
+  assert.deepEqual(unhandled, [])
+})
+
+test('a mid-document slice offset is one GramJS itself accepts', async () => {
+  // iterDownload does big-integer arithmetic on `offset` (offset.divide, offset.add), so a
+  // plain JS number sails through the fake client and throws against the real one.
+  const content = randomBytes(SLICE_SIZE + 1000)
+  const { handle } = await tempFd(content.length)
+  const client = fakeClient(content, { partSize: 512 * 1024 })
+
+  await downloadToFile(client, fakeMessage(content.length), handle.fd, { offset: 0, concurrency: 1 })
+  await handle.close()
+
+  const document = new Api.Document({
+    id: bigInt(123),
+    accessHash: bigInt(456),
+    fileReference: Buffer.alloc(8),
+    date: 0,
+    mimeType: 'application/octet-stream',
+    size: bigInt(content.length),
+    dcId: 2,
+    attributes: [new Api.DocumentAttributeFilename({ fileName: 'ark.part0001' })],
+  })
+
+  const iter = iterDownload(
+    { _log: { info() {}, debug() {}, warn() {} } },
+    {
+      file: new Api.MessageMediaDocument({ document }),
+      offset: client.calls[1].offset,
+      requestSize: 512 * 1024,
+    },
+  )
+
+  // A non-zero offset has to route through the iterator that can start mid-document; the
+  // direct one only ever begins at zero.
+  assert.equal(iter.constructor.name, 'GenericDownloadIter')
 })

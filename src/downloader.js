@@ -4,7 +4,7 @@ import { promisify } from 'node:util'
 
 import { returnBigInt } from 'telegram/Helpers.js'
 
-import { PART_SIZE, SLICE_SIZE } from './chunking.js'
+import { DEFAULT_CONCURRENCY, PART_SIZE, SLICE_SIZE } from './chunking.js'
 import { withRetry } from './retry.js'
 
 const write = promisify(writeCallback)
@@ -52,7 +52,12 @@ async function hashRange(fd, offset, length) {
   return hash.digest('hex')
 }
 
-export async function downloadToFile(client, message, fd, { offset, onProgress, retryOptions } = {}) {
+export async function downloadToFile(
+  client,
+  message,
+  fd,
+  { offset, onProgress, retryOptions, concurrency = DEFAULT_CONCURRENCY } = {},
+) {
   const document = message?.media?.document
 
   if (!document) {
@@ -113,9 +118,42 @@ export async function downloadToFile(client, message, fd, { offset, onProgress, 
     }, retryOptions)
   }
 
-  for (let index = 0; index < sliceCount; index += 1) {
-    await downloadSlice(index)
+  let next = 0
+  let failed = false
+  let failure = null
+
+  const worker = async () => {
+    for (;;) {
+      // Stop handing out work the moment anything has failed: the chunk is lost either way,
+      // and every further request is bandwidth spent on a file about to be thrown away.
+      if (failed) return
+
+      const index = next
+      next += 1
+      if (index >= sliceCount) return
+
+      try {
+        await downloadSlice(index)
+      } catch (err) {
+        // Not `failure ??= err`: a falsy rejection reason would leave `failure` falsy and the
+        // throw below would read as success, turning a broken chunk into a silent one. The
+        // first error is the one kept — later ones are usually consequences of the shutdown
+        // rather than the cause.
+        if (!failed) {
+          failed = true
+          failure = err
+        }
+        return
+      }
+    }
   }
+
+  // Every worker absorbs its own error above, so none of these promises rejects and none can
+  // become an unhandledRejection that hides the real one. This await is also what guarantees
+  // no write is still in flight when the function returns.
+  await Promise.all(Array.from({ length: Math.min(concurrency, sliceCount) }, worker))
+
+  if (failed) throw failure
 
   return { sha256: await hashRange(fd, offset, size), size }
 }
