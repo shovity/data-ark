@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { route, HELP } from '../src/cli.js'
+import { runLogin } from '../src/commands/login.js'
+import { runLogout } from '../src/commands/logout.js'
 
 async function main() {
   let parsed
@@ -12,13 +14,20 @@ async function main() {
     return
   }
 
-  if (parsed.command === 'help') {
-    console.log(HELP)
-    return
+  switch (parsed.command) {
+    case 'help':
+      console.log(HELP)
+      return
+    case 'login':
+      await runLogin()
+      return
+    case 'logout':
+      await runLogout()
+      return
+    default:
+      console.error(`Lệnh "${parsed.command}" chưa được cài đặt.`)
+      process.exitCode = 1
   }
-
-  console.error(`Lệnh "${parsed.command}" chưa được cài đặt.`)
-  process.exitCode = 1
 }
 
 main().catch((err) => {
