@@ -7,7 +7,11 @@ import { closeQuietly, connect as realConnect, requireChat, searchDocuments } fr
 import { defaultConfigDir, loadConfig } from '../config.js'
 import { downloadToFile } from '../downloader.js'
 import { manifestFileName, parseManifest } from '../manifest.js'
-import { createProgress, formatBytes } from '../progress.js'
+import { createProgress, formatBytes, formatDuration } from '../progress.js'
+
+// Anything past a minute of waiting needs saying out loud; below that the pause is shorter
+// than the time a user would spend wondering about it.
+const LONG_WAIT_MS = 60_000
 
 async function realSearchManifest(client, peer, backupId) {
   const wanted = manifestFileName(backupId)
@@ -25,8 +29,8 @@ async function realGetMessage(client, peer, msgId) {
   return message ?? null
 }
 
-export async function realDownloadChunk(client, message, handle, offset, onProgress) {
-  return await downloadToFile(client, message, handle.fd, { offset, onProgress })
+export async function realDownloadChunk(client, message, handle, offset, onProgress, retryOptions) {
+  return await downloadToFile(client, message, handle.fd, { offset, onProgress, retryOptions })
 }
 
 // manifest.name comes from data downloaded off Telegram — don't trust it when picking
@@ -63,14 +67,34 @@ export async function runRestore(backupId, options = {}, deps = {}) {
     getMessage = realGetMessage,
     downloadChunk = realDownloadChunk,
     confirm = askConfirm,
+    retryOptions = {},
     writeErr = (line) => process.stderr.write(line),
+    log: writeLog = (line) => console.log(line),
     silent = false,
   } = deps
 
   const config = await loadConfig(configDir)
   const chat = requireChat(options, config)
-  const log = silent ? () => {} : (line) => console.log(line)
+  const log = silent ? () => {} : writeLog
   const warn = silent ? () => {} : writeErr
+
+  // A restore keeps no progress file, so a part that comes back -503 is retried rather than
+  // thrown away — and a retry nobody is told about is indistinguishable from a hung transfer,
+  // because the progress bar simply stops moving while the wait runs.
+  function onRetry(err, attempt, delayMs) {
+    if (delayMs > LONG_WAIT_MS) {
+      warn(
+        `\nTelegram wants ${formatDuration(delayMs / 1000)} of waiting before the next part ` +
+          `(${err.message}). data-ark is waiting and will carry on by itself, leave it running.\n`,
+      )
+      return
+    }
+
+    warn(
+      `\nTemporary error (${err.message}), retry ${attempt} in ` +
+        `${formatDuration(delayMs / 1000)}.\n`,
+    )
+  }
 
   const client = await connect(config, { verbose: options.verbose })
 
@@ -134,6 +158,7 @@ export async function runRestore(backupId, options = {}, deps = {}) {
           handle,
           chunk.i * manifest.chunkSize,
           progress.advance,
+          { ...retryOptions, onRetry },
         )
 
         progress.finish()
