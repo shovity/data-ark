@@ -1,5 +1,10 @@
 export const PART_SIZE = 512 * 1024
 export const MAX_PARTS = 4000
+
+// One slice is one short iterDownload stream. Small enough that a failed slice costs little
+// and that there are far more slices than workers for the pool to balance across; big enough
+// that the per-stream setup disappears against 16 parts of payload.
+export const SLICE_SIZE = 8 * 1024 * 1024
 export const MAX_CHUNK_SIZE = 1950 * 1024 * 1024
 export const DEFAULT_CHUNK_SIZE = 1800 * 1024 * 1024
 export const DEFAULT_CONCURRENCY = 8

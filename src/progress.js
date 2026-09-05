@@ -27,12 +27,16 @@ export function formatDuration(seconds) {
   return `${s}s`
 }
 
-export function renderProgress({ done, total, elapsedMs, label, width = 24 }) {
+export function renderProgress({ done, total, elapsedMs, label, width = 24, transferred = done }) {
   const ratio = total === 0 ? 1 : Math.min(done / total, 1)
   const filled = Math.round(ratio * width)
   const bar = `${'█'.repeat(filled)}${'░'.repeat(width - filled)}`
 
-  const bytesPerSecond = elapsedMs > 0 ? done / (elapsedMs / 1000) : 0
+  // Speed measures what this run moved, not what the file already has. A resumed upload
+  // starts with gigabytes behind it, and dividing those by a two-second-old run reports a
+  // fictional 3 GB/s and an ETA of almost nothing. The bar and the byte counts still speak
+  // for the whole file, because that is the question being asked.
+  const bytesPerSecond = elapsedMs > 0 ? transferred / (elapsedMs / 1000) : 0
   // Clamp to 0: done can overshoot total (one extra tick) and a negative ETA is meaningless.
   const remaining = bytesPerSecond > 0 ? Math.max(0, (total - done) / bytesPerSecond) : Infinity
 
@@ -45,12 +49,16 @@ export function renderProgress({ done, total, elapsedMs, label, width = 24 }) {
 export function createProgress({
   total,
   label,
+  // Bytes a previous run already sent. They belong on the bar — the question is how much of
+  // the file is done, not how much of today's session — but not in the speed.
+  done: startedWith = 0,
   write = (line) => process.stderr.write(line),
   now = () => Date.now(),
   minIntervalMs = 200,
 }) {
   const startedAt = now()
-  let done = 0
+  let done = startedWith
+  let currentLabel = label
   let lastDrawnAt = startedAt
   let widestLine = 0
 
@@ -58,7 +66,13 @@ export function createProgress({
   // before it (a shrinking ETA, a speed that changes unit) would leave the previous tail on
   // screen, so pad every line out to the widest one drawn so far.
   function draw(suffix) {
-    const line = renderProgress({ done, total, elapsedMs: now() - startedAt, label })
+    const line = renderProgress({
+      done,
+      total,
+      elapsedMs: now() - startedAt,
+      label: currentLabel,
+      transferred: done - startedWith,
+    })
     widestLine = Math.max(widestLine, line.length)
     write(`\r${line.padEnd(widestLine)}${suffix}`)
   }
@@ -67,6 +81,15 @@ export function createProgress({
     advance(bytes) {
       done += bytes
       if (now() - lastDrawnAt < minIntervalMs) return
+      lastDrawnAt = now()
+      draw('')
+    },
+    // One bar spans the whole transfer while the label names the chunk in flight, so the
+    // label changes mid-line and has to be drawn at once: throttled, it would keep showing
+    // the previous chunk's number for the first 200ms of the new one. It counts as a draw,
+    // because the redraw a moment later would say the same thing.
+    setLabel(next) {
+      currentLabel = next
       lastDrawnAt = now()
       draw('')
     },

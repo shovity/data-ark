@@ -723,3 +723,142 @@ test('silent prints nothing to stderr, even on a FLOOD_WAIT', async () => {
 
   assert.deepEqual(lines, [])
 })
+
+test('upload draws one bar for the whole file, not one per chunk', async () => {
+  const ws = await tempWorkspace(1000)
+  const written = []
+
+  await runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
+    ...deps(fakeClient()),
+    configDir: ws.configDir,
+    partSize: 128,
+    silent: false,
+    log: () => {},
+    writeErr: (line) => written.push(line),
+  })
+
+  const text = written.join('')
+  assert.match(text, /Chunk 1\/3/)
+  assert.match(text, /Chunk 2\/3/)
+  assert.match(text, /Chunk 3\/3/)
+
+  assert.equal(
+    written.filter((line) => line.endsWith('\n')).length,
+    1,
+    'the bar owns one line for the whole upload',
+  )
+  assert.ok(
+    written.every((line) => line.includes('/1000 B')),
+    'the total is the file, never the chunk in flight',
+  )
+  assert.doesNotMatch(text, /\/400 B/)
+
+  const percents = written.map((line) => Number(line.match(/(\d+)%/)[1]))
+
+  for (let i = 1; i < percents.length; i += 1) {
+    assert.ok(percents[i] >= percents[i - 1], `${percents[i]}% came after ${percents[i - 1]}%`)
+  }
+
+  assert.equal(percents.at(0), 0)
+  assert.ok(percents.includes(40), 'the bar carries chunk 1 over into chunk 2')
+  assert.ok(percents.includes(80), 'the bar carries chunk 2 over into chunk 3')
+  assert.equal(percents.at(-1), 100)
+})
+
+test('a resumed upload starts the bar where the last run stopped', async () => {
+  const ws = await tempWorkspace(1000)
+
+  await assert.rejects(() =>
+    runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
+      ...deps(fakeClient({ failOnChunk: 1 })),
+      configDir: ws.configDir,
+      partSize: 128,
+      silent: true,
+    }),
+  )
+
+  const written = []
+
+  await runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
+    ...deps(fakeClient()),
+    configDir: ws.configDir,
+    partSize: 128,
+    silent: false,
+    log: () => {},
+    writeErr: (line) => written.push(line),
+  })
+
+  assert.match(written[0], /Chunk 2\/3/)
+  assert.match(written[0], /40%/, 'the 400 bytes of the first run are already on the bar')
+  assert.match(written.at(-1), /100%/)
+  assert.equal(written.filter((line) => line.endsWith('\n')).length, 1)
+})
+
+test('chunks already in the chat are reported before the bar starts', async () => {
+  const ws = await tempWorkspace(1000)
+
+  await assert.rejects(() =>
+    runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
+      ...deps(fakeClient({ failOnChunk: 1 })),
+      configDir: ws.configDir,
+      partSize: 128,
+      silent: true,
+    }),
+  )
+
+  const out = []
+
+  await runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
+    ...deps(fakeClient()),
+    configDir: ws.configDir,
+    partSize: 128,
+    silent: false,
+    log: (line) => out.push(['log', line]),
+    writeErr: (line) => out.push(['err', line]),
+  })
+
+  const skipped = out.findIndex(([, line]) => line.includes('already uploaded, skipping.'))
+  const firstBar = out.findIndex(([stream, line]) => stream === 'err' && line.includes('%'))
+
+  assert.ok(skipped >= 0, 'the skipped chunk is still reported')
+  assert.ok(
+    skipped < firstBar,
+    'stdout must be done before the bar claims the line it keeps returning to',
+  )
+})
+
+test('nothing left to send draws no bar at all', async () => {
+  const ws = await tempWorkspace(1000)
+
+  await assert.rejects(() =>
+    runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
+      ...deps(fakeClient()),
+      sendManifest: async () => {
+        throw new Error('connection dropped before the manifest')
+      },
+      configDir: ws.configDir,
+      partSize: 128,
+      silent: true,
+    }),
+    /before the manifest/,
+  )
+
+  const logged = []
+  const written = []
+
+  await runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
+    ...deps(fakeClient()),
+    configDir: ws.configDir,
+    partSize: 128,
+    silent: false,
+    log: (line) => logged.push(line),
+    writeErr: (line) => written.push(line),
+  })
+
+  assert.equal(
+    logged.filter((line) => line.includes('already uploaded, skipping.')).length,
+    3,
+    'all three chunks are reported as already sent',
+  )
+  assert.deepEqual(written, [], 'a bar that never has a byte to move is never drawn')
+})

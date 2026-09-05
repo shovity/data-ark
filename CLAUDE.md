@@ -50,6 +50,14 @@ records — names on stderr every backup id it drops, even when the caller asked
 
 `src/uploader.js` and `src/downloader.js` know about byte ranges and Telegram's
 part APIs; they must not mention CLI flags like `--chunk-size` in their errors.
+
+`src/downloader.js` fetches a chunk as 8MB slices through a pool of concurrent
+`iterDownload` streams, because one stream is one request at a time and that caps a restore
+at round-trip latency — about 3 MB/s — however much bandwidth is going spare. Bytes
+therefore land out of order, so the chunk's sha256 is taken by reading the assembled range
+back off disk once every slice is in. That check is about assembly, not media: the read may
+be served from the page cache.
+
 `src/commands/*.js` own the user-facing narrative. `src/caption.js`,
 `src/chunking.js`, `src/manifest.js`, `src/progress.js`, `src/retry.js`,
 `src/state.js` and `src/config.js` are pure enough to test without a client.
@@ -84,3 +92,12 @@ releasing — upload and restore a file large enough to need several chunks abov
   `SaveFilePart` / `InputFile`. Both branches need real-account coverage.
 - `FLOOD_WAIT` is honoured for exactly the seconds the server asks for, and any
   wait over a minute is announced so the user does not read it as a hang.
+- `src/retry.js` governs both upload and download with the same policy: 8 attempts,
+  the exponential branch capped at 30s because past that point doubling again buys
+  nothing — the far side has either recovered or is not coming back on this attempt,
+  and an uncapped eighth attempt would mean a two-minute stare at a frozen bar.
+  `FLOOD_WAIT` is the one exception to the cap: it is still waited out in full for
+  exactly the seconds the server names, because guessing short would just draw
+  another `FLOOD_WAIT`. Together this tolerates a stalled stretch of roughly 91
+  seconds (1 + 2 + 4 + 8 + 16 + 30 + 30 seconds across the backoff, plus the final
+  attempt) before giving up and failing loudly rather than hanging indefinitely.

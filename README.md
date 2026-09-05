@@ -27,7 +27,7 @@ data-ark signs in with your own Telegram account (MTProto), not a bot. That is a
 |---|---|---|
 | `--to <chat>` | the remembered destination | `@username`, `-100123…`, or `me`. `upload` and `status` remember it; `list` and `restore` only look there. A negative channel id works either way: `--to -100123…` or `--to=-100123…` |
 | `--chunk-size <n>` | `1800MB` | e.g. `1.8GB`, `500MB`. Hard ceiling 1950MB. An unfinished backup keeps the size it started with. |
-| `--concurrency <n>` | `8` | 512KB parts sent in parallel. An integer from 1 to 64. |
+| `--concurrency <n>` | `8` | 512KB parts sent in parallel. An integer from 1 to 64. `upload` only — `restore` downloads through its own fixed pool of workers and does not read this flag. |
 | `--out <path>` | the basename from the manifest | Where to write the restored file; relative paths resolve against the current directory |
 | `--limit <n>` | `20` | How many backups `list` shows, newest first |
 | `--verbose` | off | Show the Telegram client's own connection logs, hidden by default so they do not break up the progress bar |
