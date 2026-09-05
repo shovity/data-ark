@@ -54,3 +54,17 @@ test('--verbose is parsed as a flag', () => {
   assert.equal(route(['big.iso']).options.verbose, undefined)
   assert.equal(route(['restore', 'ark-1', '--verbose']).options.verbose, true)
 })
+
+test('a negative channel id is accepted separated by a space, not only with =', () => {
+  assert.equal(route(['data.tar', '--to', '-1001234567890']).options.to, '-1001234567890')
+  assert.equal(route(['data.tar', '--to=-1001234567890']).options.to, '-1001234567890')
+  assert.equal(route(['restore', 'ark-1', '--to', '-100123']).options.to, '-100123')
+})
+
+test('joining a negative value does not swallow the flag that follows --to', () => {
+  assert.throws(() => route(['data.tar', '--to', '--verbose']), { code: 'ERR_PARSE_ARGS_INVALID_OPTION_VALUE' })
+})
+
+test('a --to after -- stays a positional', () => {
+  assert.equal(route(['data.tar', '--', '--to', '-100123']).options.to, undefined)
+})

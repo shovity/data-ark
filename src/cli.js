@@ -28,9 +28,35 @@ Options:
   -h, --help             Show this help.
 `
 
+// A channel id is negative, and typing it separated by a space is the natural reflex —
+// but parseArgs rejects any value starting with a dash as ambiguous. Join the pair itself
+// so `--to -100123` works like `--to=-100123`. Only a bare negative integer qualifies, so
+// `--to --verbose` still reports the missing value instead of eating the next flag, and
+// everything after `--` is left alone because it is no longer an option there.
+function joinNegativeChatId(argv) {
+  const joined = []
+
+  for (let i = 0; i < argv.length; i += 1) {
+    if (argv[i] === '--') {
+      joined.push(...argv.slice(i))
+      return joined
+    }
+
+    if (argv[i] === '--to' && /^-\d+$/.test(argv[i + 1] ?? '')) {
+      joined.push(`--to=${argv[i + 1]}`)
+      i += 1
+      continue
+    }
+
+    joined.push(argv[i])
+  }
+
+  return joined
+}
+
 export function route(argv) {
   const { values, positionals } = parseArgs({
-    args: argv,
+    args: joinNegativeChatId(argv),
     options: OPTIONS,
     allowPositionals: true,
   })
