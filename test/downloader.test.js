@@ -554,20 +554,27 @@ test('one slice failing for good fails the chunk and reports that error', async 
   await handle.close()
 })
 
-test('a failing slice leaves no unhandled rejection behind', async () => {
-  // A worker whose promise rejects while nobody is awaiting it yet becomes an
-  // unhandledRejection and buries the real error. uploadRange learned this the hard way.
+test('first error wins, by wall-clock time, not by slice index', async () => {
+  // Slice one is asked for before slice three but is made to fail later in wall-clock
+  // terms (two setImmediate rounds after slice three's synchronous throw). If the pool
+  // reported whichever failure happened to be caught first regardless of timing, or always
+  // the lowest index, this would catch it.
   const content = randomBytes(SLICE_SIZE * 4)
   const { handle } = await tempFd(content.length)
-  const unhandled = []
-  const record = (err) => unhandled.push(err)
-  process.on('unhandledRejection', record)
 
   const client = {
     iterDownload(params) {
       const from = Number(params.offset ?? 0)
+      const inSliceOne = from >= SLICE_SIZE && from < SLICE_SIZE * 2
+      const inSliceThree = from >= SLICE_SIZE * 3
+
       return (async function* () {
-        if (from > 0) throw new Error('every slice but the first is gone')
+        if (inSliceThree) throw new Error('slice three fails first, in wall-clock time')
+        if (inSliceOne) {
+          await new Promise((resolve) => setImmediate(resolve))
+          await new Promise((resolve) => setImmediate(resolve))
+          throw new Error('slice one is asked for first but fails second')
+        }
         for (let at = from; at < content.length; at += 512 * 1024) {
           yield content.subarray(at, at + 512 * 1024)
         }
@@ -581,14 +588,87 @@ test('a failing slice leaves no unhandled rejection behind', async () => {
       concurrency: 4,
       retryOptions: { attempts: 1, baseDelayMs: 0, sleep: async () => {} },
     }),
-    /every slice but the first is gone/,
+    /slice three fails first, in wall-clock time/,
   )
 
-  await new Promise((resolve) => setImmediate(resolve))
-  process.off('unhandledRejection', record)
+  await handle.close()
+})
+
+test('the pool stops handing out slices once one has failed', async () => {
+  const sliceCount = 10
+  const content = randomBytes(SLICE_SIZE * sliceCount)
+  const { handle } = await tempFd(content.length)
+  const requested = new Set()
+
+  const client = {
+    iterDownload(params) {
+      const from = Number(params.offset ?? 0)
+      requested.add(from)
+
+      return (async function* () {
+        if (from === 0) throw new Error('slice one is gone')
+        for (let at = from; at < content.length; at += 512 * 1024) {
+          yield content.subarray(at, at + 512 * 1024)
+        }
+      })()
+    },
+  }
+
+  await assert.rejects(
+    () => downloadToFile(client, fakeMessage(content.length), handle.fd, {
+      offset: 0,
+      concurrency: 2,
+      retryOptions: { attempts: 1, baseDelayMs: 0, sleep: async () => {} },
+    }),
+    /slice one is gone/,
+  )
 
   await handle.close()
-  assert.deepEqual(unhandled, [])
+  assert.ok(
+    requested.size < sliceCount,
+    `pool must stop early: requested ${requested.size} of ${sliceCount} slices`,
+  )
+})
+
+test('a slice retries mid-stream while at least three other slices stay in flight', async () => {
+  // done lives inside downloadSlice's own closure per call. If it were ever shared across
+  // slices, this is the test that would catch it: slice two breaks and resumes while
+  // slices zero, one and three are still being downloaded, and the assembled file must
+  // still match byte for byte.
+  const content = randomBytes(SLICE_SIZE * 4)
+  const { file, handle } = await tempFd(content.length)
+  let brokenOnce = false
+
+  const client = {
+    iterDownload(params) {
+      const from = Number(params.offset ?? 0)
+      const inSliceTwo = from >= SLICE_SIZE * 2 && from < SLICE_SIZE * 3
+
+      return (async function* () {
+        let sent = 0
+        for (let at = from; at < content.length; at += 512 * 1024) {
+          await new Promise((resolve) => setImmediate(resolve))
+          if (inSliceTwo && !brokenOnce && sent === 2) {
+            brokenOnce = true
+            throw new Error('-503: Timeout (caused by upload.GetFile)')
+          }
+          yield content.subarray(at, at + 512 * 1024)
+          sent += 1
+        }
+      })()
+    },
+  }
+
+  const result = await downloadToFile(client, fakeMessage(content.length), handle.fd, {
+    offset: 0,
+    concurrency: 4,
+    retryOptions: { baseDelayMs: 0, sleep: async () => {} },
+  })
+
+  await handle.close()
+  assert.equal(result.size, content.length)
+  assert.equal(result.sha256, createHash('sha256').update(content).digest('hex'))
+  assert.deepEqual(await fs.readFile(file), content)
 })
 
 test('a mid-document slice offset is one GramJS itself accepts', async () => {
