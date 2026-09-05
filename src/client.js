@@ -25,6 +25,18 @@ export function normalizeChatTarget(input) {
   return text
 }
 
+// Telegram's web client addresses a chat by putting the raw target in the fragment, which
+// covers both a negative channel id and an @username. Saved Messages is the exception: it
+// is reached by the account's own id, which data-ark does not know, so it gets no link
+// rather than a guessed one that lands somewhere else.
+export function chatUrl(chat) {
+  const text = String(chat)
+
+  if (text === 'me') return null
+
+  return `https://web.telegram.org/k/#${text}`
+}
+
 export function requireChat(options, config) {
   const raw = options.to ?? config.defaultChat
 

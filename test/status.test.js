@@ -134,7 +134,7 @@ test('status --to sets the destination first, then reports it', async () => {
   })
 
   assert.equal((await loadConfig(configDir)).defaultChat, '@new')
-  assert.match(out.text(), /Destination\s+@new/)
+  assert.match(out.text(), /Destination\s+https:\/\/web\.telegram\.org\/k\/#@new/)
   assert.doesNotMatch(out.text(), /@old/)
 })
 
@@ -153,4 +153,46 @@ test('status --to with an unusable destination writes nothing', async () => {
   )
 
   assert.equal((await loadConfig(configDir)).defaultChat, '@old')
+})
+
+test('the destination is shown as a link that can be clicked', async () => {
+  const configDir = await tempDir()
+  await saveConfig({ ...LOGGED_IN, defaultChat: '-5107543795' }, configDir)
+  await saveState('aaa', {
+    id: 'ark-1',
+    chat: '@my_backups',
+    path: '/home/ai/data.tar',
+    size: 100,
+    mtimeMs: 1,
+    chunkSize: 40,
+    done: {},
+  }, configDir)
+  const out = collect()
+
+  await runStatus({}, {
+    configDir,
+    log: out.log,
+    connect: async () => fakeClient(),
+    disconnect: async () => {},
+  })
+
+  const text = out.text()
+  assert.match(text, /Destination\s+https:\/\/web\.telegram\.org\/k\/#-5107543795/)
+  // The unfinished backup goes to a different chat, and follows the same form.
+  assert.match(text, /https:\/\/web\.telegram\.org\/k\/#@my_backups/)
+})
+
+test('Saved Messages is named rather than linked', async () => {
+  const configDir = await tempDir()
+  await saveConfig({ ...LOGGED_IN, defaultChat: 'me' }, configDir)
+  const out = collect()
+
+  await runStatus({}, {
+    configDir,
+    log: out.log,
+    connect: async () => fakeClient(),
+    disconnect: async () => {},
+  })
+
+  assert.match(out.text(), /Destination\s+me \(Saved Messages\)/)
 })

@@ -3,7 +3,13 @@ import assert from 'node:assert/strict'
 
 import { LogLevel } from 'telegram/extensions/Logger.js'
 
-import { normalizeChatTarget, requireChat, assertLoggedIn, createLogger } from '../src/client.js'
+import {
+  normalizeChatTarget,
+  requireChat,
+  assertLoggedIn,
+  createLogger,
+  chatUrl,
+} from '../src/client.js'
 
 test('me is left untouched', () => {
   assert.equal(normalizeChatTarget('me'), 'me')
@@ -58,4 +64,14 @@ test('the Telegram logger is silent unless --verbose is given', () => {
   const loud = createLogger(true)
   assert.equal(loud.canSend(LogLevel.INFO), true)
   assert.equal(loud.canSend(LogLevel.WARN), true)
+})
+
+test('a chat target becomes a clickable web.telegram.org link', () => {
+  assert.equal(chatUrl('-5107543795'), 'https://web.telegram.org/k/#-5107543795')
+  assert.equal(chatUrl(-5107543795), 'https://web.telegram.org/k/#-5107543795')
+  assert.equal(chatUrl('@my_backups'), 'https://web.telegram.org/k/#@my_backups')
+})
+
+test('Saved Messages has no stable link, so it gets none', () => {
+  assert.equal(chatUrl('me'), null)
 })

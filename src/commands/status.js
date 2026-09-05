@@ -1,7 +1,7 @@
 import path from 'node:path'
 
 import { planChunks } from '../chunking.js'
-import { connect as realConnect } from '../client.js'
+import { chatUrl, connect as realConnect } from '../client.js'
 import { defaultConfigDir, loadConfig } from '../config.js'
 import { runSetDestination } from './set-destination.js'
 import { formatBytes } from '../progress.js'
@@ -11,6 +11,12 @@ const LABEL_WIDTH = 'Destination'.length + 2
 
 function row(label, value) {
   return `${label.padEnd(LABEL_WIDTH)}${value}`
+}
+
+// A destination is worth more as something clickable than as a raw id, but Saved Messages
+// has no link to give, so it is named instead of being dressed up as one.
+function describeChat(chat) {
+  return chatUrl(chat) ?? `${chat} (Saved Messages)`
 }
 
 function describeAccount(me) {
@@ -67,7 +73,14 @@ export async function runStatus(options = {}, deps = {}) {
   const config = await loadConfig(configDir)
 
   log(row('Account', await accountLine(config, options, { connect, disconnect })))
-  log(row('Destination', config.defaultChat ?? 'none set — pass --to @my_backups to set one'))
+  log(
+    row(
+      'Destination',
+      config.defaultChat
+        ? describeChat(config.defaultChat)
+        : 'none set — pass --to @my_backups to set one',
+    ),
+  )
 
   const states = await listStates(configDir)
 
@@ -82,9 +95,7 @@ export async function runStatus(options = {}, deps = {}) {
     const total = planChunks(state.size, state.chunkSize).length
     const done = Object.keys(state.done ?? {}).length
 
-    log(
-      `  ${state.id}  ${path.basename(state.path)}  ` +
-        `${done}/${total} chunks  ${formatBytes(state.size)}  → ${state.chat}`,
-    )
+    log(`  ${state.id}  ${path.basename(state.path)}  ${done}/${total} chunks  ${formatBytes(state.size)}`)
+    log(`  → ${describeChat(state.chat)}`)
   }
 }
