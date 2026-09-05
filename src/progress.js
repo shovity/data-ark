@@ -52,9 +52,15 @@ export function createProgress({
   const startedAt = now()
   let done = 0
   let lastDrawnAt = startedAt
+  let widestLine = 0
 
+  // \r only moves the cursor home, it does not erase. A redraw that is shorter than the one
+  // before it (a shrinking ETA, a speed that changes unit) would leave the previous tail on
+  // screen, so pad every line out to the widest one drawn so far.
   function draw(suffix) {
-    write(`\r${renderProgress({ done, total, elapsedMs: now() - startedAt, label })}${suffix}`)
+    const line = renderProgress({ done, total, elapsedMs: now() - startedAt, label })
+    widestLine = Math.max(widestLine, line.length)
+    write(`\r${line.padEnd(widestLine)}${suffix}`)
   }
 
   return {

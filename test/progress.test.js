@@ -97,3 +97,34 @@ test('renderProgress never shows a negative ETA when done overshoots total', () 
   assert.match(line, /ETA 0s/)
   assert.doesNotMatch(line, /ETA -/)
 })
+
+test('createProgress pads a redraw so a shorter line cannot leave stale characters behind', () => {
+  const MB = 1024 * 1024
+  const GB = 1024 * MB
+  const lines = []
+  let clock = 0
+
+  const progress = createProgress({
+    total: GB,
+    label: 'Chunk 1/3',
+    write: (line) => lines.push(line),
+    now: () => clock,
+    minIntervalMs: 0,
+  })
+
+  // A crawling start gives a long ETA, then a burst shrinks it: the last line is the
+  // shortest one, so an unpadded redraw leaves the tail of the previous ETA on screen.
+  let sent = 0
+  for (const [ms, done] of [[1000, MB], [2000, 4 * MB], [3000, 512 * MB], [4000, GB]]) {
+    clock = ms
+    progress.advance(done - sent)
+    sent = done
+  }
+
+  let widest = 0
+  for (const line of lines) {
+    const drawn = line.replace(/^\r/, '')
+    assert.ok(drawn.length >= widest, `redraw of ${drawn.length} chars cannot cover ${widest}`)
+    widest = drawn.length
+  }
+})
