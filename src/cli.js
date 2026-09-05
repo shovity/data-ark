@@ -27,12 +27,34 @@ Options:
   --to <chat>            Destination: @username, -100123..., or me. upload and status
                          remember it; list and restore only look there.
   --chunk-size <n>       Size of each chunk, default 1800MB. Examples: 1.8GB, 500MB.
+                         An unfinished backup keeps the size it started with.
   --concurrency <n>      512KB parts sent in parallel, default 8, max 64.
   --out <path>           Where to write the restored file. Defaults to the basename in the manifest.
   --limit <n>            How many backups list shows, default 20.
   --verbose              Show Telegram connection logs, hidden by default.
   -h, --help             Show this help.
 `
+
+// What Ctrl-C means depends on the command that was running: upload has written every
+// finished chunk to a state file, restore has not. Naming the backup matters because the
+// id is what `status` lists and what a later `restore` needs — the chunks are already in
+// the chat under that id, whether or not this run ever finishes.
+export function interruptMessage(command, { backupId } = {}) {
+  if (command === 'upload') {
+    const backup = backupId ? `Backup ${backupId} is saved` : 'Progress is saved'
+
+    return (
+      `\n${backup} — run the same command again to continue, ` +
+      'or "npx data-ark status" to see what is left.\n'
+    )
+  }
+
+  if (command === 'restore') {
+    return '\nStopped. Download progress is not saved, running again starts over.\n'
+  }
+
+  return '\nStopped.\n'
+}
 
 // A channel id is negative, and typing it separated by a space is the natural reflex —
 // but parseArgs rejects any value starting with a dash as ambiguous. Join the pair itself

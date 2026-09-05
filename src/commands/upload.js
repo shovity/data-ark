@@ -23,7 +23,16 @@ import {
   serializeManifest,
 } from '../manifest.js'
 import { createProgress, formatBytes, formatDuration } from '../progress.js'
-import { clearState, loadState, markChunkDone, saveState, stateFile, stateKey } from '../state.js'
+import {
+  MAX_STATES,
+  clearState,
+  loadState,
+  markChunkDone,
+  pruneStates,
+  saveState,
+  stateFile,
+  stateKey,
+} from '../state.js'
 import { uploadRange } from '../uploader.js'
 
 // Above this threshold the wait must be spelled out, per spec §8.
@@ -63,6 +72,7 @@ export async function runUpload(filePath, options = {}, deps = {}) {
     retryOptions = {},
     writeErr = (line) => process.stderr.write(line),
     silent = false,
+    onBackupId = () => {},
   } = deps
 
   const absPath = path.resolve(filePath)
@@ -81,7 +91,7 @@ export async function runUpload(filePath, options = {}, deps = {}) {
 
   const config = await loadConfig(configDir)
   const chat = requireChat(options, config)
-  const chunkSize = options['chunk-size'] ? parseSize(options['chunk-size']) : DEFAULT_CHUNK_SIZE
+  const requestedChunkSize = options['chunk-size'] ? parseSize(options['chunk-size']) : null
   const concurrency = options.concurrency ? Number(options.concurrency) : DEFAULT_CONCURRENCY
 
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > MAX_CONCURRENCY) {
@@ -92,11 +102,28 @@ export async function runUpload(filePath, options = {}, deps = {}) {
     )
   }
 
-  const chunks = planChunks(stat.size, chunkSize)
   const key = stateKey(absPath, stat.size, stat.mtimeMs)
 
   let state = await loadState(key, configDir)
-  const resuming = Boolean(state) && state.chunkSize === chunkSize
+
+  // The chunks already in the chat were cut at the size this backup started with, and
+  // nothing can re-cut them. Carrying on at a different size would abandon every one of
+  // them in the chat, where data-ark can no longer find them — so an unfinished backup
+  // keeps its own chunk size, and a flag that disagrees is refused rather than obeyed.
+  if (state && requestedChunkSize !== null && requestedChunkSize !== state.chunkSize) {
+    const file = stateFile(key, configDir)
+    throw new Error(
+      `This unfinished backup is cut into ${formatBytes(state.chunkSize)} chunks, but ` +
+        `--chunk-size asks for ${formatBytes(requestedChunkSize)} — the chunks already in ` +
+        `${state.chat} cannot be re-cut. Run again without --chunk-size to carry on, or delete ` +
+        `${file} and run again to start a new backup, which leaves the chunks already sent ` +
+        'sitting in the chat with nothing to point at them.',
+    )
+  }
+
+  const chunkSize = state ? state.chunkSize : (requestedChunkSize ?? DEFAULT_CHUNK_SIZE)
+  const chunks = planChunks(stat.size, chunkSize)
+  const resuming = Boolean(state)
 
   if (resuming && state.chat !== String(chat)) {
     const file = stateFile(key, configDir)
@@ -122,7 +149,20 @@ export async function runUpload(filePath, options = {}, deps = {}) {
       done: {},
     }
     await saveState(key, state, configDir)
+
+    // Only a new backup adds to the directory, so this is the one place it can grow.
+    // The report goes out even when the caller asked for silence: this is not narration
+    // about a transfer, it is data-ark dropping the only record of someone else's chunks.
+    for (const gone of await pruneStates(configDir)) {
+      writeErr(
+        `\nDropped the record of unfinished backup ${gone.id}: data-ark keeps the ` +
+          `${MAX_STATES} most recent. The chunks it sent are still in ${gone.chat}, ` +
+          'searchable by that id, but that backup can no longer be resumed.\n',
+      )
+    }
   }
+
+  onBackupId(state.id)
 
   const log = silent ? () => {} : (line) => console.log(line)
   const warn = silent ? () => {} : writeErr

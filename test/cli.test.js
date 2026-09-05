@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { route } from '../src/cli.js'
+import { route, interruptMessage } from '../src/cli.js'
 
 test('a first argument that is not a subcommand is treated as a file to upload', () => {
   const r = route(['data.tar'])
@@ -106,4 +106,28 @@ test('list takes --limit and --to', () => {
   assert.equal(parsed.command, 'list')
   assert.equal(parsed.options.limit, '5')
   assert.equal(parsed.options.to, '@store')
+})
+
+test('interrupting an upload names the backup and how to carry on', () => {
+  const message = interruptMessage('upload', { backupId: 'ark-20260905-7f3a91' })
+
+  assert.match(message, /ark-20260905-7f3a91/)
+  assert.match(message, /run the same command again/)
+  assert.match(message, /data-ark status/)
+})
+
+test('interrupting an upload before it has an id still promises nothing false', () => {
+  const message = interruptMessage('upload')
+
+  assert.match(message, /run the same command again/)
+  assert.doesNotMatch(message, /undefined/)
+})
+
+test('interrupting a restore says the download is lost', () => {
+  assert.match(interruptMessage('restore'), /starts over/)
+})
+
+test('interrupting anything else just says it stopped', () => {
+  assert.equal(interruptMessage('login'), '\nStopped.\n')
+  assert.equal(interruptMessage(null), '\nStopped.\n')
 })

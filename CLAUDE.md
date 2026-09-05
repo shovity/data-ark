@@ -40,6 +40,12 @@ for this and must not be relaxed to make a test pass:
 - `runRestore` writes to `<target>.partial`, verifies every chunk's size and sha256
   plus the final file length, and renames only after all of it passes.
 
+The same rule covers the local record of a backup, because losing it strands chunks in the
+chat that nothing can point at any more: `runUpload` refuses a `--chunk-size` that differs
+from the unfinished backup's own (and resumes at that size when the flag is absent) rather
+than starting over, and `pruneStates` — which keeps only the `MAX_STATES` most recent
+records — names on stderr every backup id it drops, even when the caller asked for silence.
+
 ## Module boundaries
 
 `src/uploader.js` and `src/downloader.js` know about byte ranges and Telegram's

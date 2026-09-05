@@ -12,6 +12,8 @@ import {
   clearState,
   stateDir,
   listStates,
+  pruneStates,
+  MAX_STATES,
 } from '../src/state.js'
 
 async function tempDir() {
@@ -121,4 +123,64 @@ test('listStates returns every unfinished backup and skips unreadable files', as
 
 test('listStates on a machine that has never run an upload returns nothing', async () => {
   assert.deepEqual(await listStates(await tempDir()), [])
+})
+
+// Every state file is written the moment a chunk lands, so the file's own mtime is the
+// last time this backup made progress. Tests set it explicitly rather than racing the clock.
+async function saveStateAged(key, state, dir, ageMinutes) {
+  await saveState(key, state, dir)
+  const when = new Date(Date.UTC(2026, 8, 5) - ageMinutes * 60_000)
+  await fs.utimes(path.join(stateDir(dir), `${key}.json`), when, when)
+}
+
+test('pruneStates keeps the newest states and drops the older ones', async () => {
+  const dir = await tempDir()
+  await saveStateAged('old', sampleState({ id: 'ark-old' }), dir, 300)
+  await saveStateAged('mid', sampleState({ id: 'ark-mid' }), dir, 200)
+  await saveStateAged('new', sampleState({ id: 'ark-new' }), dir, 100)
+
+  await pruneStates(dir, 2)
+
+  const left = await listStates(dir)
+  assert.deepEqual(left.map((s) => s.id).sort(), ['ark-mid', 'ark-new'])
+})
+
+test('pruneStates names the backups it dropped', async () => {
+  const dir = await tempDir()
+  await saveStateAged('old', sampleState({ id: 'ark-old' }), dir, 300)
+  await saveStateAged('new', sampleState({ id: 'ark-new' }), dir, 100)
+
+  const dropped = await pruneStates(dir, 1)
+
+  assert.deepEqual(dropped.map((s) => s.id), ['ark-old'])
+})
+
+test('pruneStates below the limit changes nothing', async () => {
+  const dir = await tempDir()
+  await saveStateAged('a', sampleState({ id: 'ark-1' }), dir, 200)
+  await saveStateAged('b', sampleState({ id: 'ark-2' }), dir, 100)
+
+  assert.deepEqual(await pruneStates(dir, 20), [])
+  assert.equal((await listStates(dir)).length, 2)
+})
+
+test('pruneStates deletes an unreadable state file without naming it', async () => {
+  const dir = await tempDir()
+  await saveStateAged('good', sampleState({ id: 'ark-good' }), dir, 100)
+  await fs.writeFile(path.join(stateDir(dir), 'broken.json'), '{ not json')
+  const old = new Date(Date.UTC(2026, 8, 5) - 300 * 60_000)
+  await fs.utimes(path.join(stateDir(dir), 'broken.json'), old, old)
+
+  const dropped = await pruneStates(dir, 1)
+
+  assert.deepEqual(dropped, [])
+  assert.deepEqual(await fs.readdir(stateDir(dir)), ['good.json'])
+})
+
+test('pruneStates on a machine that has never run an upload does nothing', async () => {
+  assert.deepEqual(await pruneStates(await tempDir()), [])
+})
+
+test('the default limit is 20 unfinished backups', () => {
+  assert.equal(MAX_STATES, 20)
 })

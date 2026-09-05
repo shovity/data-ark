@@ -26,7 +26,7 @@ data-ark signs in with your own Telegram account (MTProto), not a bot. That is a
 | Flag | Default | Meaning |
 |---|---|---|
 | `--to <chat>` | the remembered destination | `@username`, `-100123…`, or `me`. `upload` and `status` remember it; `list` and `restore` only look there. A negative channel id works either way: `--to -100123…` or `--to=-100123…` |
-| `--chunk-size <n>` | `1800MB` | e.g. `1.8GB`, `500MB`. Hard ceiling 1950MB. |
+| `--chunk-size <n>` | `1800MB` | e.g. `1.8GB`, `500MB`. Hard ceiling 1950MB. An unfinished backup keeps the size it started with. |
 | `--concurrency <n>` | `8` | 512KB parts sent in parallel. An integer from 1 to 64. |
 | `--out <path>` | the basename from the manifest | Where to write the restored file; relative paths resolve against the current directory |
 | `--limit <n>` | `20` | How many backups `list` shows, newest first |
@@ -73,7 +73,10 @@ Every run mints a `backupId`. The file is read directly by offset — no tempora
 If the connection drops during an **upload**, just run the same command again — progress lives in `~/.data-ark/state/` and finished chunks are skipped, keeping the same `backupId`. Two things to know about rerunning:
 
 - Running again with a `--to` that differs from the destination stored in the unfinished progress makes data-ark **refuse to run** rather than silently redirect — one backup cannot be split across two destinations. The error points the way out: drop `--to` to keep sending to the original destination, or delete the state file to start a new backup.
-- Running again with a different `--chunk-size` is treated as an entirely new backup (new backup id), not a resume.
+- Running again **without** `--chunk-size` resumes at the size the backup started with, whatever the default is today.
+- Running again **with** a `--chunk-size` that differs from that size makes data-ark **refuse to run**, for the same reason as `--to`: the chunks already in the chat were cut that way and cannot be re-cut. Drop the flag to carry on, or delete the state file to start a new backup — which leaves the chunks already sent in the chat with nothing pointing at them.
+
+`Ctrl-C` during an upload names the backup it was working on, so `data-ark status` and a later `restore` have something to go on. data-ark keeps the **20 most recent** unfinished backups in `~/.data-ark/state/`; starting a new one past that drops the oldest record and says which id it dropped. Only the local record goes — the chunks that backup sent stay in the chat, searchable by that id, but it can no longer be resumed.
 
 **Restore keeps no state to resume from.** Pressing `Ctrl-C` mid-restore saves nothing — running again starts over.
 

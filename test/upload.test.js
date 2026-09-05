@@ -8,7 +8,7 @@ import path from 'node:path'
 import { runUpload } from '../src/commands/upload.js'
 import { parseManifestCaption } from '../src/caption.js'
 import { parseManifest } from '../src/manifest.js'
-import { loadState, stateKey } from '../src/state.js'
+import { loadState, stateKey, MAX_STATES } from '../src/state.js'
 
 /**
  * Fake client that collects every part by fileId and, when sendFile is called,
@@ -346,7 +346,7 @@ test('resuming with a different --to is blocked, no backup split across two dest
   assert.equal(config.defaultChat, '@store', 'the default destination must not be overwritten when blocked')
 })
 
-test('resuming with a different --chunk-size starts a new backup and drops the old done set', async () => {
+test('an unfinished backup resumes with the chunk size it started with', async () => {
   const ws = await tempWorkspace(1000)
 
   const failing = fakeClient({ failOnChunk: 1 })
@@ -363,19 +363,172 @@ test('resuming with a different --chunk-size starts a new backup and drops the o
   const key = stateKey(path.resolve(ws.filePath), stat.size, stat.mtimeMs)
   const firstRunId = (await loadState(key, ws.configDir)).id
 
+  // No --chunk-size this time: the default is 1800MB, which would make this one chunk
+  // and throw away the chunk already in the chat.
   const retry = fakeClient()
-  const result = await runUpload(ws.filePath, { to: '@store', 'chunk-size': '250' }, {
+  const result = await runUpload(ws.filePath, { to: '@store' }, {
     ...deps(retry),
     configDir: ws.configDir,
     partSize: 128,
     silent: true,
   })
 
-  assert.notEqual(result.id, firstRunId, 'it must be a new backup id')
-  assert.equal(result.chunks, 4)
+  assert.equal(result.id, firstRunId, 'the same backup must carry on')
+  assert.equal(result.chunks, 3)
 
   const chunkMessages = retry.messages.filter((m) => !m.fileName.endsWith('.manifest.json'))
-  assert.equal(chunkMessages.length, 4, 'everything is re-uploaded, no old done chunks are kept')
+  assert.equal(chunkMessages.length, 2, 'the chunk that already landed is not sent twice')
+})
+
+test('changing --chunk-size on an unfinished backup is refused, not silently restarted', async () => {
+  const ws = await tempWorkspace(1000)
+
+  const failing = fakeClient({ failOnChunk: 1 })
+  await assert.rejects(() =>
+    runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
+      ...deps(failing),
+      configDir: ws.configDir,
+      partSize: 128,
+      silent: true,
+    }),
+  )
+
+  const stat = await fs.stat(ws.filePath)
+  const key = stateKey(path.resolve(ws.filePath), stat.size, stat.mtimeMs)
+  const before = await loadState(key, ws.configDir)
+
+  const retry = fakeClient()
+  await assert.rejects(
+    () =>
+      runUpload(ws.filePath, { to: '@store', 'chunk-size': '250' }, {
+        ...deps(retry),
+        configDir: ws.configDir,
+        partSize: 128,
+        silent: true,
+      }),
+    (err) => {
+      assert.match(err.message, /--chunk-size/)
+      assert.match(err.message, /\.json/)
+      return true
+    },
+  )
+
+  assert.equal(retry.messages.length, 0, 'nothing may be sent once the run is blocked')
+  assert.deepEqual(await loadState(key, ws.configDir), before, 'the unfinished backup stays intact')
+})
+
+test('the chunk size the backup started with may be repeated on the command line', async () => {
+  const ws = await tempWorkspace(1000)
+
+  const failing = fakeClient({ failOnChunk: 1 })
+  await assert.rejects(() =>
+    runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
+      ...deps(failing),
+      configDir: ws.configDir,
+      partSize: 128,
+      silent: true,
+    }),
+  )
+
+  const retry = fakeClient()
+  const result = await runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
+    ...deps(retry),
+    configDir: ws.configDir,
+    partSize: 128,
+    silent: true,
+  })
+
+  assert.equal(result.chunks, 3)
+})
+
+test('the backup id is announced before the first chunk goes out', async () => {
+  const ws = await tempWorkspace(1000)
+  const client = fakeClient()
+  const announced = []
+
+  const result = await runUpload(
+    ws.filePath,
+    { to: '@store', 'chunk-size': '400' },
+    {
+      ...deps(client),
+      configDir: ws.configDir,
+      partSize: 128,
+      silent: true,
+      onBackupId: (id) => announced.push({ id, sent: client.messages.length }),
+    },
+  )
+
+  assert.deepEqual(announced, [{ id: result.id, sent: 0 }])
+})
+
+test('a resumed backup announces the id it is carrying on with', async () => {
+  const ws = await tempWorkspace(1000)
+
+  const failing = fakeClient({ failOnChunk: 1 })
+  await assert.rejects(() =>
+    runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
+      ...deps(failing),
+      configDir: ws.configDir,
+      partSize: 128,
+      silent: true,
+    }),
+  )
+
+  const stat = await fs.stat(ws.filePath)
+  const key = stateKey(path.resolve(ws.filePath), stat.size, stat.mtimeMs)
+  const firstRunId = (await loadState(key, ws.configDir)).id
+
+  const announced = []
+  await runUpload(ws.filePath, { to: '@store' }, {
+    ...deps(fakeClient()),
+    configDir: ws.configDir,
+    partSize: 128,
+    silent: true,
+    onBackupId: (id) => announced.push(id),
+  })
+
+  assert.deepEqual(announced, [firstRunId])
+})
+
+test('starting a new backup drops the oldest states past the limit and says which', async () => {
+  const ws = await tempWorkspace(1000)
+  const warnings = []
+
+  const stateDirPath = path.join(ws.configDir, 'state')
+  await fs.mkdir(stateDirPath, { recursive: true })
+
+  for (let i = 0; i < MAX_STATES; i += 1) {
+    const file = path.join(stateDirPath, `stale${i}.json`)
+    const stale = {
+      id: `ark-stale-${i}`,
+      chat: '@store',
+      path: `/home/ai/old-${i}.tar`,
+      size: 1000,
+      mtimeMs: 1757000000000,
+      chunkSize: 400,
+      done: {},
+    }
+    await fs.writeFile(file, JSON.stringify(stale))
+    const when = new Date(Date.UTC(2020, 0, 1) + i * 60_000)
+    await fs.utimes(file, when, when)
+  }
+
+  await runUpload(
+    ws.filePath,
+    { to: '@store', 'chunk-size': '400' },
+    {
+      ...deps(fakeClient()),
+      configDir: ws.configDir,
+      partSize: 128,
+      silent: true,
+      writeErr: (line) => warnings.push(line),
+    },
+  )
+
+  const left = await fs.readdir(stateDirPath)
+  assert.equal(left.length, MAX_STATES - 1, 'the new backup takes the last slot')
+  assert.ok(!left.includes('stale0.json'), 'the oldest state is the one dropped')
+  assert.match(warnings.join(''), /ark-stale-0/)
 })
 
 test('a file changed during the upload sends no manifest and gives a clear error', async () => {

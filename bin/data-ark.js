@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { route, HELP } from '../src/cli.js'
+import { route, HELP, interruptMessage } from '../src/cli.js'
 import { runLogin } from '../src/commands/login.js'
 import { runList } from '../src/commands/list.js'
 import { runLogout } from '../src/commands/logout.js'
@@ -12,22 +12,12 @@ const SIGINT_EXIT_CODE = 130
 
 // Which command is running when Ctrl-C arrives — each one tells a different truth
 // about whether progress was saved, so we need to know which to pick the right line.
+// The backup id arrives a moment later, once upload knows which backup this run is.
 let currentCommand = null
-
-function sigintMessage(command) {
-  if (command === 'upload') {
-    return '\nStopped. Progress is saved, run the same command again to continue.\n'
-  }
-
-  if (command === 'restore') {
-    return '\nStopped. Download progress is not saved, running again starts over.\n'
-  }
-
-  return '\nStopped.\n'
-}
+let currentBackupId = null
 
 process.on('SIGINT', () => {
-  process.stderr.write(sigintMessage(currentCommand))
+  process.stderr.write(interruptMessage(currentCommand, { backupId: currentBackupId }))
   process.exit(SIGINT_EXIT_CODE)
 })
 
@@ -70,7 +60,11 @@ async function main() {
       return
 
     case 'upload':
-      await runUpload(parsed.args[0], parsed.options)
+      await runUpload(parsed.args[0], parsed.options, {
+        onBackupId: (id) => {
+          currentBackupId = id
+        },
+      })
       return
 
     case 'restore':

@@ -44,6 +44,55 @@ export async function clearState(key, configDir = defaultConfigDir()) {
   }
 }
 
+// A state file is only useful while its backup can still be resumed, and nothing ever
+// removes one whose file was edited since: the key includes mtime, so that state can never
+// match again. Left alone the directory only grows, and with it the report `status` prints.
+export const MAX_STATES = 20
+
+// The newest states are the ones worth keeping, and a state file is rewritten every time a
+// chunk lands, so its mtime is when this backup last made progress. Returns the states that
+// were dropped: the caller says their ids out loud, because after this the id is the only
+// way left to find those chunks in the chat.
+export async function pruneStates(configDir = defaultConfigDir(), keep = MAX_STATES) {
+  let names
+  try {
+    names = await fs.readdir(stateDir(configDir))
+  } catch (err) {
+    if (err.code === 'ENOENT') return []
+    throw err
+  }
+
+  const files = []
+
+  for (const name of names) {
+    if (!name.endsWith('.json')) continue
+
+    const file = path.join(stateDir(configDir), name)
+
+    try {
+      const stat = await fs.stat(file)
+      files.push({ key: name.slice(0, -'.json'.length), file, mtimeMs: stat.mtimeMs })
+    } catch (err) {
+      // Gone between readdir and stat: nothing left to prune.
+      if (err.code !== 'ENOENT') throw err
+    }
+  }
+
+  files.sort((a, b) => b.mtimeMs - a.mtimeMs)
+
+  const dropped = []
+
+  for (const { key, file } of files.slice(keep)) {
+    // Read before unlink: a file that cannot be read back, or that carries no id, is
+    // still pruned — it just cannot be named, and a report naming nothing helps no one.
+    const state = await loadState(key, configDir)
+    await fs.unlink(file)
+    if (state?.id) dropped.push(state)
+  }
+
+  return dropped
+}
+
 // status needs every unfinished backup at once. A state file that cannot be read is skipped
 // rather than fatal, for the same reason loadState returns null: one corrupt file must not
 // hide the other backups still waiting to be finished.
