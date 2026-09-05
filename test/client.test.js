@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { normalizeChatTarget, requireChat } from '../src/client.js'
+import { normalizeChatTarget, requireChat, assertLoggedIn } from '../src/client.js'
 
 test('me giữ nguyên', () => {
   assert.equal(normalizeChatTarget('me'), 'me')
@@ -34,4 +34,16 @@ test('requireChat dùng đích đã ghi nhớ khi không có --to', () => {
 
 test('requireChat hướng dẫn khi chưa từng có đích nào', () => {
   assert.throws(() => requireChat({}, {}), /--to/)
+})
+
+test('assertLoggedIn ném lỗi khi cấu hình rỗng', () => {
+  assert.throws(() => assertLoggedIn({}), /Chưa đăng nhập/)
+})
+
+test('assertLoggedIn ném lỗi khi thiếu apiHash', () => {
+  assert.throws(() => assertLoggedIn({ session: 's', apiId: 1 }), /Chưa đăng nhập/)
+})
+
+test('assertLoggedIn không ném lỗi khi cấu hình đủ', () => {
+  assert.doesNotThrow(() => assertLoggedIn({ session: 's', apiId: 1, apiHash: 'h' }))
 })

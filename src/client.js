@@ -28,10 +28,14 @@ export function requireChat(options, config) {
   return normalizeChatTarget(raw)
 }
 
-export async function connect(config) {
+export function assertLoggedIn(config) {
   if (!config.session || !config.apiId || !config.apiHash) {
     throw new Error('Chưa đăng nhập — chạy "npx data-ark login" trước.')
   }
+}
+
+export async function connect(config) {
+  assertLoggedIn(config)
 
   const client = new TelegramClient(new StringSession(config.session), config.apiId, config.apiHash, {
     connectionRetries: 5,

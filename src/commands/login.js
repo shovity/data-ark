@@ -15,12 +15,37 @@ function createPrompts() {
   }
 }
 
+const LOGIN_ERROR_MESSAGES = {
+  PHONE_NUMBER_INVALID: 'số điện thoại không hợp lệ',
+  PHONE_CODE_INVALID: 'mã xác nhận sai',
+  PHONE_CODE_EXPIRED: 'mã xác nhận đã hết hạn',
+  PASSWORD_HASH_INVALID: 'mật khẩu hai lớp sai',
+  FLOOD_WAIT: 'bị Telegram giới hạn tần suất, cần chờ',
+}
+
+export function describeLoginError(err) {
+  const message = String(err?.message ?? err ?? '')
+  const known = Object.entries(LOGIN_ERROR_MESSAGES).find(([code]) => message.startsWith(code))
+
+  if (!known) return message
+
+  const [, description] = known
+  return `${description} (${message})`
+}
+
 export async function runLogin({ configDir = defaultConfigDir(), prompts = createPrompts() } = {}) {
   const config = await loadConfig(configDir)
 
   console.log('Cần api_id và api_hash của riêng bạn. Lấy tại https://my.telegram.org → API development tools.\n')
 
-  const apiId = Number(await prompts.ask(`api_id${config.apiId ? ` [${config.apiId}]` : ''}: `) || config.apiId)
+  const apiIdAnswer = (await prompts.ask(`api_id${config.apiId ? ` [${config.apiId}]` : ''}: `)).trim()
+
+  if (apiIdAnswer !== '' && !/^\d+$/.test(apiIdAnswer)) {
+    prompts.close()
+    throw new Error('api_id phải là số nguyên.')
+  }
+
+  const apiId = apiIdAnswer === '' ? config.apiId : Number(apiIdAnswer)
   const apiHash = (await prompts.ask(`api_hash${config.apiHash ? ' [giữ nguyên]' : ''}: `)) || config.apiHash
 
   if (!apiId || !apiHash) {
@@ -34,7 +59,7 @@ export async function runLogin({ configDir = defaultConfigDir(), prompts = creat
     phoneNumber: () => prompts.ask('Số điện thoại (dạng +84...): '),
     phoneCode: () => prompts.ask('Mã xác nhận Telegram vừa gửi: '),
     password: () => prompts.ask('Mật khẩu hai lớp (bỏ trống nếu không bật): '),
-    onError: (err) => console.error(`Lỗi đăng nhập: ${err.message}`),
+    onError: (err) => console.error(`Lỗi đăng nhập: ${describeLoginError(err)}`),
   })
 
   const me = await client.getMe()
