@@ -28,7 +28,8 @@ Options:
                          remember it; list and restore only look there.
   --chunk-size <n>       Size of each chunk, default 1800MB. Examples: 1.8GB, 500MB.
                          An unfinished backup keeps the size it started with.
-  --concurrency <n>      512KB parts sent in parallel, default 8, max 64.
+  --concurrency <n>      512KB parts sent in parallel, default 8, max 64. Upload only —
+                         restore always downloads with its own fixed pool of workers.
   --out <path>           Where to write the restored file. Defaults to the basename in the manifest.
   --limit <n>            How many backups list shows, default 20.
   --verbose              Show Telegram connection logs, hidden by default.

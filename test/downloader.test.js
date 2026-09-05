@@ -499,31 +499,51 @@ test('slices are fetched concurrently, not one after another', async () => {
 })
 
 test('a chunk of one slice does not start eight workers', async () => {
+  // Peak concurrent streams is bounded by the `index >= sliceCount` guard inside worker
+  // even if eight workers were spawned, so measuring streams cannot tell "one worker
+  // started" from "eight started and seven returned immediately" — the mutation that
+  // proves it is changing `Math.min(concurrency, sliceCount)` to plain `concurrency`.
+  // The only externally visible trace of a worker existing at all is the call that
+  // creates it: `Array.from({ length }, worker)` invokes `worker` once per slot, and that
+  // invocation is a worker's first act, win or lose. Spying on the global `Array.from` for
+  // the duration of this test — downloadToFile's only use of it — counts workers actually
+  // started without touching production code.
   const content = randomBytes(1000)
   const { handle } = await tempFd(1000)
-  let inFlight = 0
-  let peak = 0
 
   const client = {
     iterDownload(params) {
       const from = Number(params.offset ?? 0)
-      inFlight += 1
-      peak = Math.max(peak, inFlight)
-
       return (async function* () {
-        try {
-          yield content.subarray(from)
-        } finally {
-          inFlight -= 1
-        }
+        yield content.subarray(from)
       })()
     },
   }
 
-  await downloadToFile(client, fakeMessage(1000), handle.fd, { offset: 0, concurrency: 8 })
+  const originalArrayFrom = Array.from
+  let workersStarted = 0
+
+  Array.from = (arrayLike, mapFn, ...rest) => {
+    if (typeof mapFn !== 'function') return originalArrayFrom(arrayLike, mapFn, ...rest)
+
+    return originalArrayFrom(
+      arrayLike,
+      (...args) => {
+        workersStarted += 1
+        return mapFn(...args)
+      },
+      ...rest,
+    )
+  }
+
+  try {
+    await downloadToFile(client, fakeMessage(1000), handle.fd, { offset: 0, concurrency: 8 })
+  } finally {
+    Array.from = originalArrayFrom
+  }
 
   await handle.close()
-  assert.equal(peak, 1)
+  assert.equal(workersStarted, 1, 'a single-slice chunk must start exactly one worker, not eight')
 })
 
 test('one slice failing for good fails the chunk and reports that error', async () => {
@@ -635,25 +655,41 @@ test('a slice retries mid-stream while at least three other slices stay in fligh
   // slices, this is the test that would catch it: slice two breaks and resumes while
   // slices zero, one and three are still being downloaded, and the assembled file must
   // still match byte for byte.
+  //
+  // The byte-for-byte checks alone pass even at concurrency 1, where nothing is ever
+  // actually overlapping — they do not depend on the retry happening concurrently with
+  // anything. `inFlightSlices` tracks, per slice index, whether that slice's stream is
+  // currently being consumed, and the retrying stream snapshots how many *other* slices
+  // are in that set at the exact moment it throws, before its own `finally` clears it.
   const content = randomBytes(SLICE_SIZE * 4)
   const { file, handle } = await tempFd(content.length)
   let brokenOnce = false
+  const inFlightSlices = new Set()
+  let othersInFlightAtThrow = null
 
   const client = {
     iterDownload(params) {
       const from = Number(params.offset ?? 0)
-      const inSliceTwo = from >= SLICE_SIZE * 2 && from < SLICE_SIZE * 3
+      const sliceIndex = Math.floor(from / SLICE_SIZE)
+      const inSliceTwo = sliceIndex === 2
 
       return (async function* () {
-        let sent = 0
-        for (let at = from; at < content.length; at += 512 * 1024) {
-          await new Promise((resolve) => setImmediate(resolve))
-          if (inSliceTwo && !brokenOnce && sent === 2) {
-            brokenOnce = true
-            throw new Error('-503: Timeout (caused by upload.GetFile)')
+        inFlightSlices.add(sliceIndex)
+
+        try {
+          let sent = 0
+          for (let at = from; at < content.length; at += 512 * 1024) {
+            await new Promise((resolve) => setImmediate(resolve))
+            if (inSliceTwo && !brokenOnce && sent === 2) {
+              brokenOnce = true
+              othersInFlightAtThrow = inFlightSlices.size - 1
+              throw new Error('-503: Timeout (caused by upload.GetFile)')
+            }
+            yield content.subarray(at, at + 512 * 1024)
+            sent += 1
           }
-          yield content.subarray(at, at + 512 * 1024)
-          sent += 1
+        } finally {
+          inFlightSlices.delete(sliceIndex)
         }
       })()
     },
@@ -669,6 +705,10 @@ test('a slice retries mid-stream while at least three other slices stay in fligh
   assert.equal(result.size, content.length)
   assert.equal(result.sha256, createHash('sha256').update(content).digest('hex'))
   assert.deepEqual(await fs.readFile(file), content)
+  assert.ok(
+    othersInFlightAtThrow >= 3,
+    `expected at least 3 other slices in flight when slice two threw, got ${othersInFlightAtThrow}`,
+  )
 })
 
 test('a mid-document slice offset is one GramJS itself accepts', async () => {

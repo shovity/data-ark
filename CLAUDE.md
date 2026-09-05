@@ -92,3 +92,12 @@ releasing — upload and restore a file large enough to need several chunks abov
   `SaveFilePart` / `InputFile`. Both branches need real-account coverage.
 - `FLOOD_WAIT` is honoured for exactly the seconds the server asks for, and any
   wait over a minute is announced so the user does not read it as a hang.
+- `src/retry.js` governs both upload and download with the same policy: 8 attempts,
+  the exponential branch capped at 30s because past that point doubling again buys
+  nothing — the far side has either recovered or is not coming back on this attempt,
+  and an uncapped eighth attempt would mean a two-minute stare at a frozen bar.
+  `FLOOD_WAIT` is the one exception to the cap: it is still waited out in full for
+  exactly the seconds the server names, because guessing short would just draw
+  another `FLOOD_WAIT`. Together this tolerates a stalled stretch of roughly 91
+  seconds (1 + 2 + 4 + 8 + 16 + 30 + 30 seconds across the backoff, plus the final
+  attempt) before giving up and failing loudly rather than hanging indefinitely.
