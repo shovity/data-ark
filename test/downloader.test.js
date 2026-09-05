@@ -90,3 +90,25 @@ test('báo lỗi rõ ràng khi message không có document', async () => {
   )
   await handle.close()
 })
+
+test('báo lỗi rõ ràng khi offset không được cung cấp', async () => {
+  const { handle } = await tempFd(10)
+  const client = fakeClient([Buffer.alloc(10)])
+
+  await assert.rejects(
+    () => downloadToFile(client, fakeMessage(), handle.fd, {}),
+    /offset phải là một số hữu hạn/,
+  )
+  await handle.close()
+})
+
+test('báo lỗi rõ ràng khi offset không phải là số', async () => {
+  const { handle } = await tempFd(10)
+  const client = fakeClient([Buffer.alloc(10)])
+
+  await assert.rejects(
+    () => downloadToFile(client, fakeMessage(), handle.fd, { offset: 'abc' }),
+    /offset phải là một số hữu hạn/,
+  )
+  await handle.close()
+})

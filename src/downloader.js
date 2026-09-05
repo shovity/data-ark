@@ -22,6 +22,10 @@ export async function downloadToFile(client, message, fd, { offset, onProgress }
     throw new Error(`Message ${message?.id} không chứa file đính kèm.`)
   }
 
+  if (!Number.isFinite(offset)) {
+    throw new Error(`offset phải là một số hữu hạn, nhận được: ${offset}`)
+  }
+
   const hash = createHash('sha256')
   let written = 0
 
