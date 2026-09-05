@@ -13,9 +13,14 @@ import { uploadRange, LARGE_FILE_THRESHOLD } from '../src/uploader.js'
  * Client giả: ghi lại mọi request upload để test có thể ghép các part lại,
  * so với dải byte gốc, và kiểm xem API nào đã được dùng.
  */
-function fakeClient({ failFirstPart = false, failEveryPart = false } = {}) {
+function fakeClient({
+  failFirstPart = false,
+  failEveryPart = false,
+  rejectPartWithUndefined = null,
+} = {}) {
   const requests = []
   let failed = false
+  let rejectedWithUndefined = false
 
   return {
     requests,
@@ -26,6 +31,15 @@ function fakeClient({ failFirstPart = false, failEveryPart = false } = {}) {
       if (failFirstPart && !failed && request.filePart === 0) {
         failed = true
         throw new Error('mạng lỗi')
+      }
+      if (
+        rejectPartWithUndefined !== null &&
+        !rejectedWithUndefined &&
+        request.filePart === rejectPartWithUndefined
+      ) {
+        rejectedWithUndefined = true
+        // eslint-disable-next-line no-throw-literal
+        throw undefined
       }
       requests.push({
         className: request.className,
@@ -247,6 +261,26 @@ test('part hỏng được thử lại và dữ liệu vẫn nguyên vẹn', asy
   })
 
   assert.deepEqual(reassemble(client.requests), content)
+  await handle.close()
+})
+
+test('part bị từ chối với lý do falsy (undefined) vẫn phải ném lỗi, không được coi là thành công', async () => {
+  const content = randomBytes(2000)
+  const { handle } = await tempFile(content)
+  // Part 1 reject bằng `undefined` — đúng kiểu Promise.reject(undefined) mà
+  // `sendError ??= err` sẽ nuốt mất vì kết quả gán ra vẫn falsy.
+  const client = fakeClient({ rejectPartWithUndefined: 1 })
+
+  await assert.rejects(() =>
+    uploadRange(client, handle.fd, {
+      offset: 0,
+      length: content.length,
+      fileName: 'x',
+      partSize: 512,
+      retryOptions: { attempts: 1 },
+    }),
+  )
+
   await handle.close()
 })
 

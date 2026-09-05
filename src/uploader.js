@@ -70,6 +70,7 @@ export async function uploadRange(client, fd, options) {
     const end = Math.min(start + concurrency, totalParts)
     const sending = []
     let sendError = null
+    let sendFailed = false
     let readError = null
 
     // Đọc tuần tự để hash đúng thứ tự, gửi song song.
@@ -88,7 +89,14 @@ export async function uploadRange(client, fd, options) {
           withRetry(() => client.invoke(partRequest(part, bytes)), retryOptions).then(
             () => onProgress?.(partLength),
             (err) => {
-              sendError ??= err
+              // Không dùng `sendError ??= err`: nếu lý do reject là falsy
+              // (undefined/null), phép gán đó vẫn set sendError = err (falsy)
+              // rồi `if (sendError)` bên dưới coi như không có lỗi — nuốt mất
+              // một lần gửi thất bại và biến nó thành "thành công" giả.
+              if (!sendFailed) {
+                sendFailed = true
+                sendError = err
+              }
             },
           ),
         )
@@ -102,7 +110,7 @@ export async function uploadRange(client, fd, options) {
     await Promise.all(sending)
 
     if (readError) throw readError
-    if (sendError) throw sendError
+    if (sendFailed) throw sendError
   }
 
   const inputFile = isLarge
