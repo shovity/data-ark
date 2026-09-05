@@ -33,14 +33,25 @@ export function describeLoginError(err) {
   return `${description} (${message})`
 }
 
+// GramJS starts an update loop the moment a client connects, and that loop only stops when
+// destroy() marks the client destroyed. disconnect() alone leaves it pinging a socket that is
+// already closed: every ping fails with "Error: TIMEOUT" and asks the sender to reconnect,
+// printed straight over the destination question login asks after signing in. Every other
+// command shuts down the same way, and login is the seam tests need to reach it.
+const createTelegramClient = (apiId, apiHash, options) =>
+  new TelegramClient(new StringSession(''), apiId, apiHash, options)
+
 export async function runLogin({
   configDir = defaultConfigDir(),
   prompts = createPrompts(),
   verbose = false,
+  createClient = createTelegramClient,
+  shutdown = (client) => client.destroy(),
+  log = (line) => console.log(line),
 } = {}) {
   const config = await loadConfig(configDir)
 
-  console.log('You need your own api_id and api_hash. Get them at https://my.telegram.org → API development tools.\n')
+  log('You need your own api_id and api_hash. Get them at https://my.telegram.org → API development tools.\n')
 
   const apiIdAnswer = (await prompts.ask(`api_id${config.apiId ? ` [${config.apiId}]` : ''}: `)).trim()
 
@@ -57,7 +68,7 @@ export async function runLogin({
     throw new Error('Missing api_id or api_hash.')
   }
 
-  const client = new TelegramClient(new StringSession(''), apiId, apiHash, {
+  const client = createClient(apiId, apiHash, {
     connectionRetries: 5,
     baseLogger: createLogger(verbose),
   })
@@ -71,7 +82,7 @@ export async function runLogin({
 
   const me = await client.getMe()
   const session = client.session.save()
-  await client.disconnect()
+  await shutdown(client)
 
   const chatAnswer = (
     await prompts.ask(
@@ -89,6 +100,6 @@ export async function runLogin({
 
   await saveConfig(next, configDir)
 
-  console.log(`\nLogged in as ${me.username ? `@${me.username}` : me.firstName}.`)
-  console.log(`Config saved to ${configDir}/config.json`)
+  log(`\nLogged in as ${me.username ? `@${me.username}` : me.firstName}.`)
+  log(`Config saved to ${configDir}/config.json`)
 }

@@ -1,7 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { describeLoginError } from '../src/commands/login.js'
+import { describeLoginError, runLogin } from '../src/commands/login.js'
+import { tempDir } from './helpers.js'
 
 test('describeLoginError explains an invalid phone number', () => {
   assert.equal(
@@ -31,4 +32,48 @@ test('describeLoginError explains rate limiting and keeps the seconds', () => {
 
 test('describeLoginError passes an unrecognised code through unchanged', () => {
   assert.equal(describeLoginError({ message: 'SOME_UNKNOWN_ERROR' }), 'SOME_UNKNOWN_ERROR')
+})
+
+// Answers the prompts in order, so a test reads like the session the user would have had.
+function fakePrompts(answers) {
+  const remaining = [...answers]
+
+  return {
+    asked: [],
+    ask(question) {
+      this.asked.push(question)
+      return Promise.resolve(remaining.shift() ?? '')
+    },
+    close() {
+      this.closed = true
+    },
+  }
+}
+
+function fakeClient(calls) {
+  return {
+    session: { save: () => 'saved-session' },
+    start: async () => calls.push('start'),
+    getMe: async () => ({ username: 'someone', firstName: 'Some' }),
+    disconnect: async () => calls.push('disconnect'),
+    destroy: async () => calls.push('destroy'),
+  }
+}
+
+// GramJS starts an update loop on connect that runs until _destroyed is set, and only
+// destroy() sets it — disconnect() leaves it pinging a socket that is already closed. Every
+// ping then fails with "Error: TIMEOUT" and asks the sender to reconnect, printed on top of
+// the destination prompt that login asks after signing in.
+test('runLogin shuts the client down for good, not just the socket', async () => {
+  const calls = []
+  const configDir = await tempDir('login')
+
+  await runLogin({
+    configDir,
+    prompts: fakePrompts(['1234', 'hash', '']),
+    createClient: () => fakeClient(calls),
+    log: () => {},
+  })
+
+  assert.deepEqual(calls, ['start', 'destroy'])
 })
