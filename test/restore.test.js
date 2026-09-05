@@ -401,20 +401,21 @@ test('realDownloadChunk carries the retry options through to the downloader', as
   let failed = false
 
   const client = {
-    iterDownload() {
+    iterDownload(params) {
+      const from = Number(params.offset ?? 0)
       return (async function* () {
         if (!failed) {
           failed = true
           throw new Error('-503: Timeout (caused by upload.GetFile)')
         }
-        yield backup.content
+        yield backup.content.subarray(from)
       })()
     },
   }
 
   const result = await realDownloadChunk(
     client,
-    { id: 1, media: { document: { id: 'd' } } },
+    { id: 1, media: { document: { id: 'd', size: backup.content.length } } },
     handle,
     0,
     () => {},

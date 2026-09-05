@@ -1,13 +1,17 @@
 import { createHash } from 'node:crypto'
-import { write as writeCallback } from 'node:fs'
+import { read as readCallback, write as writeCallback } from 'node:fs'
 import { promisify } from 'node:util'
 
 import { returnBigInt } from 'telegram/Helpers.js'
 
-import { PART_SIZE } from './chunking.js'
+import { PART_SIZE, SLICE_SIZE } from './chunking.js'
 import { withRetry } from './retry.js'
 
 const write = promisify(writeCallback)
+const read = promisify(readCallback)
+
+// Read back in far bigger bites than the 512KB the network hands us: this loop is pure disk.
+const HASH_READ_SIZE = 4 * 1024 * 1024
 
 async function writeExactly(fd, buffer, position) {
   let written = 0
@@ -16,6 +20,36 @@ async function writeExactly(fd, buffer, position) {
     const { bytesWritten } = await write(fd, buffer, written, buffer.length - written, position + written)
     written += bytesWritten
   }
+}
+
+async function readExactly(fd, length, position) {
+  const buffer = Buffer.allocUnsafe(length)
+  let filled = 0
+
+  while (filled < length) {
+    const { bytesRead } = await read(fd, buffer, filled, length - filled, position + filled)
+    if (bytesRead === 0) {
+      throw new Error(`Short read: needed ${length} bytes at offset ${position} but the file ended.`)
+    }
+    filled += bytesRead
+  }
+
+  return buffer
+}
+
+// The digest is taken from the assembled range on disk rather than from the buffers as they
+// arrive. Once slices land out of order that is the only order left to hash in, and it is
+// the better check anyway: a slice written at the wrong offset, two slices overlapping, or
+// one silently skipped all show up here. It does not prove the bytes reached the platter —
+// this read may well be served from the page cache — it proves the assembly.
+async function hashRange(fd, offset, length) {
+  const hash = createHash('sha256')
+
+  for (let at = 0; at < length; at += HASH_READ_SIZE) {
+    hash.update(await readExactly(fd, Math.min(HASH_READ_SIZE, length - at), offset + at))
+  }
+
+  return hash.digest('hex')
 }
 
 export async function downloadToFile(client, message, fd, { offset, onProgress, retryOptions } = {}) {
@@ -29,48 +63,48 @@ export async function downloadToFile(client, message, fd, { offset, onProgress, 
     throw new Error(`offset must be a finite number, got: ${offset}`)
   }
 
-  const hash = createHash('sha256')
-  let written = 0
+  // Telegram's own record of how long the document is. Taking the length from the caller
+  // instead would make runRestore's size check compare the manifest against itself.
+  const size = returnBigInt(document.size ?? 0).toJSNumber()
 
-  // A chunk is thousands of separate part requests and any one of them can come back
-  // -503, so a stream that breaks has to be picked up rather than abandoned — there is no
-  // resume file for a download, and giving up throws away every byte fetched so far.
-  // Restarting the iterator at `offset + written` is what makes that safe: bytes are
-  // hashed in the order they are written and `written` only moves once a buffer has been
-  // both written and hashed, so the resumed stream continues the same digest.
+  if (!Number.isFinite(size) || size <= 0) {
+    throw new Error(`Message ${message?.id} has a document with no usable size.`)
+  }
+
+  const sliceCount = Math.ceil(size / SLICE_SIZE)
+
+  // One slice is one short stream. `done` lives outside withRetry, so a retried slice picks
+  // up at its own watermark instead of fetching again what it already has.
   //
-  // The two offsets are not the same number and must not be confused: `written` is a
-  // position inside the document, which is where the stream resumes, while `offset +
-  // written` is a position inside the file being assembled, which is where the bytes land.
-  // Every chunk after the first has a non-zero `offset`, so mixing them up reads the wrong
-  // part of the document — caught by sha256, but only after re-downloading the whole chunk.
-  async function streamFromWhereWeStopped() {
-    for await (const buffer of client.iterDownload({
-      file: message.media,
-      offset: returnBigInt(written),
-      requestSize: PART_SIZE,
-    })) {
-      await writeExactly(fd, buffer, offset + written)
-      hash.update(buffer)
-      written += buffer.length
-      onProgress?.(buffer.length)
-    }
+  // The two offsets are not the same number: `start + done` is a position inside the
+  // document, which is where the stream resumes, while `offset + start + done` is a position
+  // inside the file being assembled, which is where the bytes land.
+  async function downloadSlice(index) {
+    const start = index * SLICE_SIZE
+    const length = Math.min(SLICE_SIZE, size - start)
+    let done = 0
+
+    await withRetry(async () => {
+      for await (const buffer of client.iterDownload({
+        file: message.media,
+        offset: returnBigInt(start + done),
+        requestSize: PART_SIZE,
+      })) {
+        // The stream runs to the end of the document; this slice stops at its own boundary.
+        const take = Math.min(buffer.length, length - done)
+
+        await writeExactly(fd, buffer.subarray(0, take), offset + start + done)
+        done += take
+        onProgress?.(take)
+
+        if (done >= length) break
+      }
+    }, retryOptions)
   }
 
-  // One attempt budget for the whole chunk would be the wrong unit: 1800MB is 3600 requests,
-  // and five failures spread across them is a healthy download, not a broken one. So a budget
-  // only ends the restore when it is spent without gaining a single byte. Every outer pass
-  // must gain at least one byte to earn another, which is what bounds the loop.
-  for (;;) {
-    const before = written
-
-    try {
-      await withRetry(streamFromWhereWeStopped, retryOptions)
-      break
-    } catch (err) {
-      if (written === before) throw err
-    }
+  for (let index = 0; index < sliceCount; index += 1) {
+    await downloadSlice(index)
   }
 
-  return { sha256: hash.digest('hex'), size: written }
+  return { sha256: await hashRange(fd, offset, size), size }
 }
