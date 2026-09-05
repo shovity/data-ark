@@ -217,10 +217,17 @@ CI vì cần credential thật.
 
 ## 10. Rủi ro đã biết
 
-Chi tiết API song song ở tầng part của GramJS — cụ thể là cách mượn sender phụ để
-bắn nhiều `saveBigFilePart` cùng lúc — cần đối chiếu với source của thư viện lúc
-triển khai. Cơ chế thì chắc chắn, nhưng tên hàm chính xác chưa được xác minh. Đây
-là rủi ro kỹ thuật duy nhất của thiết kế. Đường lui nếu vướng: cắt chunk ra file
-tạm rồi dùng `client.uploadFile` có sẵn, đổi lấy việc cần dư ~1.8GB đĩa tạm.
+Rủi ro về API song song ở tầng part đã được kiểm tra trực tiếp trong source
+`telegram@2.26.22` và hoá ra nhỏ hơn dự kiến. `client/uploads.js` upload file lớn
+bằng cách gọi `Api.upload.SaveBigFilePart` nhiều lần với cùng một `fileId`, gom
+thành từng lô rồi `Promise.all` — không có API đặc biệt nào cần mượn.
+`Utils.getAppropriatedPartSize` trả về đúng 512KB cho mọi file trên 750MB, và
+`_fileToMedia` chấp nhận `Api.InputFileBig` đã upload sẵn, nên `client.sendFile`
+dùng lại được handle mà uploader trả về.
+
+Điều còn lại chưa xác minh: `client.invoke()` có thực sự bắn song song hay xếp
+hàng tuần tự. Nếu đo được tốc độ không tăng khi nâng `--concurrency`, đường lui là
+đổi sang đúng cách GramJS tự dùng — `client.getSender(client.session.dcId)` rồi
+`sender.send(request)` — mà không phải đụng tới phần còn lại của kiến trúc.
 
 Tên `data-ark` trên npm registry hiện trả về 404, tức chưa có ai lấy.
