@@ -90,3 +90,10 @@ test('finish luôn vẽ dòng cuối và xuống dòng', () => {
   assert.match(lines[0], /100%/)
   assert.match(lines[0], /\n$/)
 })
+
+test('renderProgress không bao giờ hiện ETA âm khi done vượt total', () => {
+  const line = renderProgress({ done: 1500, total: 1000, elapsedMs: 1000, label: 'x', width: 10 })
+  assert.match(line, /100%/)
+  assert.match(line, /còn 0s/)
+  assert.doesNotMatch(line, /còn -/)
+})

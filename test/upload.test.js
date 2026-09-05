@@ -340,3 +340,195 @@ test('resume với --chunk-size khác thì bắt đầu backup mới, không gi�
   const chunkMessages = retry.messages.filter((m) => !m.fileName.endsWith('.manifest.json'))
   assert.equal(chunkMessages.length, 4, 'phải upload lại từ đầu, không giữ chunk done cũ')
 })
+
+test('file bị đổi trong lúc upload thì không gửi manifest, báo lỗi rõ ràng', async () => {
+  const ws = await tempWorkspace(1000)
+  const client = fakeClient()
+
+  const stat = await fs.stat(ws.filePath)
+  const key = stateKey(path.resolve(ws.filePath), stat.size, stat.mtimeMs)
+
+  // Sau chunk đầu tiên, một tiến trình khác ghi đè file — đúng cảnh một VM image
+  // hay dump database vẫn đang được viết trong lúc data-ark đọc nó.
+  let daDoi = false
+  const doiFileSauChunkDau = {
+    ...deps(client),
+    sendChunk: async (c, peer, args) => {
+      const message = await deps(client).sendChunk(c, peer, args)
+      if (!daDoi) {
+        daDoi = true
+        await fs.appendFile(ws.filePath, randomBytes(100))
+      }
+      return message
+    },
+    configDir: ws.configDir,
+    partSize: 128,
+    silent: true,
+  }
+
+  await assert.rejects(
+    () => runUpload(ws.filePath, { to: '@kho', 'chunk-size': '400' }, doiFileSauChunkDau),
+    (err) => {
+      assert.match(err.message, /đã thay đổi trong lúc upload/)
+      assert.match(err.message, /không đáng tin/)
+      assert.match(err.message, /chạy lại/i)
+      return true
+    },
+  )
+
+  assert.equal(
+    client.messages.filter((m) => m.fileName.endsWith('.manifest.json')).length,
+    0,
+    'không được gửi manifest cho một backup lai',
+  )
+
+  // State của lần chạy cũ vẫn còn; lần chạy sau có key khác vì mtime đã đổi, nên
+  // tự động là một backup mới chứ không resume nhầm vào dữ liệu cũ.
+  assert.ok(await loadState(key, ws.configDir), 'state cũ vẫn được giữ')
+
+  const statMoi = await fs.stat(ws.filePath)
+  const keyMoi = stateKey(path.resolve(ws.filePath), statMoi.size, statMoi.mtimeMs)
+  assert.notEqual(keyMoi, key, 'file đổi thì key đổi, lần sau là backup mới')
+})
+
+test('--concurrency quá lớn bị chặn thay vì ôm hàng GB buffer', async () => {
+  const ws = await tempWorkspace(1000)
+  const client = fakeClient()
+
+  await assert.rejects(
+    () =>
+      runUpload(
+        ws.filePath,
+        { to: '@kho', 'chunk-size': '400', concurrency: '4000' },
+        { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
+      ),
+    (err) => {
+      assert.match(err.message, /--concurrency/)
+      assert.match(err.message, /1 đến 64/)
+      return true
+    },
+  )
+
+  assert.equal(client.messages.length, 0)
+})
+
+test('--concurrency đúng 64 vẫn chạy được', async () => {
+  const ws = await tempWorkspace(1000)
+  const client = fakeClient()
+
+  const result = await runUpload(
+    ws.filePath,
+    { to: '@kho', 'chunk-size': '400', concurrency: '64' },
+    { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
+  )
+
+  assert.equal(result.chunks, 3)
+})
+
+test('FLOOD_WAIT dài được nói ra rõ ràng chứ không treo câm', async () => {
+  const ws = await tempWorkspace(400)
+  const client = fakeClient()
+
+  // Part đầu tiên dính FLOOD_WAIT_3600 một lần rồi mới trót lọt.
+  let daFlood = false
+  const invokeGoc = client.invoke.bind(client)
+  client.invoke = async (request) => {
+    if (!daFlood && request.filePart === 0) {
+      daFlood = true
+      const err = new Error('FLOOD_WAIT_3600')
+      err.seconds = 3600
+      err.errorMessage = 'FLOOD_WAIT_3600'
+      throw err
+    }
+    return await invokeGoc(request)
+  }
+
+  const lines = []
+
+  await runUpload(
+    ws.filePath,
+    { to: '@kho', 'chunk-size': '400' },
+    {
+      ...deps(client),
+      configDir: ws.configDir,
+      partSize: 128,
+      silent: false,
+      writeErr: (line) => lines.push(line),
+      retryOptions: { sleep: async () => {} },
+    },
+  )
+
+  const output = lines.join('')
+  assert.match(output, /Telegram bắt chờ 1h0m/)
+  assert.match(output, /FLOOD_WAIT_3600/)
+  assert.match(output, /đừng tắt/)
+})
+
+test('lỗi tạm thời ngắn cũng được báo, kèm số lần thử', async () => {
+  const ws = await tempWorkspace(400)
+  const client = fakeClient()
+
+  let daLoi = false
+  const invokeGoc = client.invoke.bind(client)
+  client.invoke = async (request) => {
+    if (!daLoi && request.filePart === 0) {
+      daLoi = true
+      throw new Error('mạng chập chờn')
+    }
+    return await invokeGoc(request)
+  }
+
+  const lines = []
+
+  await runUpload(
+    ws.filePath,
+    { to: '@kho', 'chunk-size': '400' },
+    {
+      ...deps(client),
+      configDir: ws.configDir,
+      partSize: 128,
+      silent: false,
+      writeErr: (line) => lines.push(line),
+      retryOptions: { sleep: async () => {} },
+    },
+  )
+
+  const output = lines.join('')
+  assert.match(output, /Lỗi tạm thời \(mạng chập chờn\), thử lại lần 1 sau 1s/)
+  assert.doesNotMatch(output, /Telegram bắt chờ/)
+})
+
+test('silent thì không in gì ra stderr, kể cả khi có FLOOD_WAIT', async () => {
+  const ws = await tempWorkspace(400)
+  const client = fakeClient()
+
+  let daFlood = false
+  const invokeGoc = client.invoke.bind(client)
+  client.invoke = async (request) => {
+    if (!daFlood && request.filePart === 0) {
+      daFlood = true
+      const err = new Error('FLOOD_WAIT_3600')
+      err.seconds = 3600
+      err.errorMessage = 'FLOOD_WAIT_3600'
+      throw err
+    }
+    return await invokeGoc(request)
+  }
+
+  const lines = []
+
+  await runUpload(
+    ws.filePath,
+    { to: '@kho', 'chunk-size': '400' },
+    {
+      ...deps(client),
+      configDir: ws.configDir,
+      partSize: 128,
+      silent: true,
+      writeErr: (line) => lines.push(line),
+      retryOptions: { sleep: async () => {} },
+    },
+  )
+
+  assert.deepEqual(lines, [])
+})

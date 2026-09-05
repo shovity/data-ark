@@ -73,5 +73,20 @@ export function parseManifest(input) {
     )
   }
 
+  // Restore ghi chunk i vào đúng offset i * chunkSize, nên bố cục phải đều:
+  // mọi chunk đúng bằng chunkSize, riêng chunk cuối là phần dư. Tổng đúng mà
+  // từng chunk lệch thì file ghép ra sẽ thủng lỗ hoặc dài thêm mà sha256 từng
+  // chunk vẫn khớp — sai âm thầm, đúng thứ data-ark không được phép để xảy ra.
+  manifest.chunks.forEach((chunk, index) => {
+    const expected = Math.min(manifest.chunkSize, manifest.size - index * manifest.chunkSize)
+    if (chunk.size !== expected) {
+      throw new Error(
+        `Chunk ${index + 1} trong manifest ghi ${chunk.size} byte, nhưng theo bố cục ` +
+          `${manifest.chunkSize} byte mỗi chunk thì phải là ${expected} byte. ` +
+          'Manifest này mô tả sai vị trí các chunk, khôi phục sẽ ra file hỏng.',
+      )
+    }
+  })
+
   return manifest
 }

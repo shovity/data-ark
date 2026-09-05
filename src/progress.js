@@ -33,7 +33,8 @@ export function renderProgress({ done, total, elapsedMs, label, width = 24 }) {
   const bar = `${'█'.repeat(filled)}${'░'.repeat(width - filled)}`
 
   const bytesPerSecond = elapsedMs > 0 ? done / (elapsedMs / 1000) : 0
-  const remaining = bytesPerSecond > 0 ? (total - done) / bytesPerSecond : Infinity
+  // Kẹp về 0: done có thể vượt total (đếm dư một nhịp) và ETA âm thì vô nghĩa.
+  const remaining = bytesPerSecond > 0 ? Math.max(0, (total - done) / bytesPerSecond) : Infinity
 
   const percent = String(Math.floor(ratio * 100)).padStart(3)
   const speed = `${formatBytes(Math.round(bytesPerSecond))}/s`

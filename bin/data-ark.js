@@ -70,7 +70,35 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  process.stderr.write(`Lỗi: ${err.message}\n`)
-  process.exitCode = 1
-})
+// GramJS giữ lại các "exported sender" cùng một timer 30 giây để giải phóng
+// chúng, và client.disconnect()/destroy() không dọn nổi: cả hai map đó là Map
+// nhưng code duyệt bằng Object.values nên bỏ sót sạch. Hệ quả: lệnh in "Xong"
+// rồi vẫn treo thêm ~30 giây, và Ctrl-C trong khoảng đó lại báo sai rằng chưa
+// lưu được gì. Chạy xong việc là thoát hẳn, không nấn ná.
+function exitWhenFlushed(code) {
+  // Ghi rỗng chỉ để mượn callback: nó chạy sau khi mọi thứ xếp hàng trước đó đã
+  // xả xuống pipe, nên không mất chữ nào khi stdout/stderr không phải TTY.
+  let pending = 2
+
+  const done = () => {
+    pending -= 1
+    if (pending === 0) process.exit(code)
+  }
+
+  // Lưới an toàn: nếu callback không bao giờ tới (pipe đã đóng) thì vẫn thoát.
+  setTimeout(() => process.exit(code), 2000).unref()
+
+  process.stdout.write('', done)
+  process.stderr.write('', done)
+}
+
+main().then(
+  () => {
+    exitWhenFlushed(process.exitCode ?? 0)
+  },
+  (err) => {
+    process.stderr.write(`Lỗi: ${err.message}\n`)
+    process.exitCode = 1
+    exitWhenFlushed(1)
+  },
+)

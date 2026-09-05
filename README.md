@@ -24,7 +24,7 @@ data-ark đăng nhập bằng chính tài khoản Telegram của bạn (MTProto)
 |---|---|---|
 | `--to <chat>` | đích đã ghi nhớ | `@username`, `-100123…`, hoặc `me` |
 | `--chunk-size <n>` | `1800MB` | Ví dụ `1.8GB`, `500MB`. Trần cứng 1950MB. |
-| `--concurrency <n>` | `8` | Số phần 512KB gửi song song. Phải là số nguyên từ 1 trở lên. |
+| `--concurrency <n>` | `8` | Số phần 512KB gửi song song. Phải là số nguyên từ 1 đến 64. |
 | `--out <đường-dẫn>` | basename của tên trong manifest | Nơi ghi file khi restore, tính từ thư mục hiện tại nếu là đường dẫn tương đối |
 
 ## Hoạt động thế nào
@@ -40,11 +40,11 @@ Mỗi lần chạy sinh ra một `backupId`. File được đọc thẳng theo o
 
 ## Giới hạn cần biết
 
-- Chunk không thể vượt 1950MB vì Telegram chỉ nhận 4000 phần 512KB mỗi file.
+- Chunk không thể vượt 1950MB: Telegram nhận tối đa 4000 phần 512KB mỗi file, tức trần số học khoảng 1953MB, và data-ark chốt ở 1950MB để chừa biên an toàn.
 - Dữ liệu **không** được mã hoá. Đừng đẩy thứ gì bạn không muốn nằm trên hạ tầng của người khác.
 - Xoá message chunk trên Telegram là mất backup, không có cách cứu.
 - Giữ lấy `backupId`. Không có nó thì phải tự tìm manifest trong chat bằng tay.
 
 ## Cấu hình lưu ở đâu
 
-`~/.data-ark/config.json` (quyền 600) chứa `apiId`, `apiHash`, session và đích lưu mặc định. `npx data-ark logout` xoá session và giữ lại phần còn lại.
+`~/.data-ark/config.json` (quyền 600) chứa `apiId`, `apiHash`, session và đích lưu mặc định. `npx data-ark logout` **chỉ xoá bản session lưu dưới máy** và giữ lại phần còn lại — phiên đăng nhập vẫn còn sống phía Telegram. Muốn cắt hẳn quyền truy cập thì vào Telegram → Settings → Devices (Active sessions) và thu hồi phiên đó.

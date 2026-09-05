@@ -44,6 +44,23 @@ export async function realDownloadChunk(client, message, handle, offset, onProgr
   return await downloadToFile(client, message, handle.fd, { offset, onProgress })
 }
 
+// manifest.name đến từ dữ liệu tải về Telegram — không tin nó khi tự chọn đường
+// dẫn. path.basename chặn được "../../x" nhưng vẫn trả về "..", "." hay "" cho
+// vài tên bệnh: path.resolve('..') là thư mục cha, nên file .partial hàng GB sẽ
+// nằm ngoài thư mục hiện tại và chỉ vỡ ra ở bước rename.
+function safeOutName(name) {
+  const base = path.basename(String(name ?? ''))
+
+  if (base === '' || base === '.' || base === '..') {
+    throw new Error(
+      `Tên file trong manifest ("${name}") không dùng được làm tên file. ` +
+        'Chạy lại kèm --out <đường-dẫn> để tự chỉ định nơi ghi.',
+    )
+  }
+
+  return base
+}
+
 async function askConfirm(question) {
   const rl = readline.createInterface({ input: stdin, output: stdout })
   const answer = await rl.question(question)
@@ -54,19 +71,21 @@ async function askConfirm(question) {
 export async function runRestore(backupId, options = {}, deps = {}) {
   const {
     connect = realConnect,
-    disconnect = (client) => client.disconnect(),
+    disconnect = (client) => client.destroy(),
     configDir = defaultConfigDir(),
     searchManifest = realSearchManifest,
     readMessageBytes = realReadMessageBytes,
     getMessage = realGetMessage,
     downloadChunk = realDownloadChunk,
     confirm = askConfirm,
+    writeErr = (line) => process.stderr.write(line),
     silent = false,
   } = deps
 
   const config = await loadConfig(configDir)
   const chat = requireChat(options, config)
   const log = silent ? () => {} : (line) => console.log(line)
+  const warn = silent ? () => {} : writeErr
 
   const client = await connect(config)
 
@@ -81,13 +100,19 @@ export async function runRestore(backupId, options = {}, deps = {}) {
     }
 
     const manifest = parseManifest(await readMessageBytes(client, manifestMessage))
-    // manifest.name đến từ dữ liệu tải về Telegram — không tin nó khi tự chọn
-    // đường dẫn: chỉ lấy basename để tránh path traversal kiểu "../../x".
     // Khi người dùng tự chỉ định --out thì tôn trọng nguyên văn đường dẫn đó.
-    const target = path.resolve(options.out ?? path.basename(manifest.name))
+    const target = path.resolve(options.out ?? safeOutName(manifest.name))
     const partial = `${target}.partial`
 
-    const exists = await fs.stat(target).then(() => true, () => false)
+    // Chỉ ENOENT mới có nghĩa là "chưa có file". Lỗi quyền hay lỗi I/O mà bị coi
+    // là vắng mặt thì data-ark sẽ ghi đè file của người dùng mà không hỏi.
+    let exists = true
+    try {
+      await fs.stat(target)
+    } catch (err) {
+      if (err.code !== 'ENOENT') throw err
+      exists = false
+    }
 
     if (exists && !(await confirm(`${target} đã tồn tại. Ghi đè? [c/K] `))) {
       throw new Error('Đã huỷ theo yêu cầu.')
@@ -116,6 +141,7 @@ export async function runRestore(backupId, options = {}, deps = {}) {
           : createProgress({
               total: chunk.size,
               label: `Chunk ${chunk.i + 1}/${manifest.chunks.length}`,
+              write: writeErr,
             })
 
         const { sha256, size } = await downloadChunk(
@@ -144,12 +170,28 @@ export async function runRestore(backupId, options = {}, deps = {}) {
       await handle.close()
     }
 
+    // Chốt chặn cuối: mọi chunk khớp sha256 mà file vẫn sai độ dài thì bố cục đã
+    // lệch ở đâu đó. Thà báo lỗi còn hơn đổi tên một file sai thành file thật.
+    const written = await fs.stat(partial)
+
+    if (written.size !== manifest.size) {
+      throw new Error(
+        `File ghép xong có ${written.size} byte, manifest ghi ${manifest.size} byte — không khớp. ` +
+          `File tải về giữ ở ${partial} để kiểm tra.`,
+      )
+    }
+
     await fs.rename(partial, target)
 
     log(`\nXong. Đã ghi ${formatBytes(manifest.size)} vào ${target}`)
 
     return { path: target, size: manifest.size }
   } finally {
-    await disconnect(client)
+    // Ngắt kết nối hỏng thì cũng không được nuốt mất lỗi thật đang bay lên.
+    try {
+      await disconnect(client)
+    } catch (err) {
+      warn(`\nCảnh báo: không đóng được kết nối Telegram: ${err.message}\n`)
+    }
   }
 }

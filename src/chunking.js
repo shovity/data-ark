@@ -2,6 +2,8 @@ export const PART_SIZE = 512 * 1024
 export const MAX_PARTS = 4000
 export const MAX_CHUNK_SIZE = 1950 * 1024 * 1024
 export const DEFAULT_CHUNK_SIZE = 1800 * 1024 * 1024
+export const DEFAULT_CONCURRENCY = 8
+export const MAX_CONCURRENCY = 64
 
 const UNITS = {
   b: 1,
@@ -27,7 +29,7 @@ export function parseSize(input) {
   if (bytes > MAX_CHUNK_SIZE) {
     throw new Error(
       'Chunk tối đa là 1950MB. Telegram chỉ nhận 4000 phần 512KB cho mỗi file, ' +
-        'tức trần cứng 2000MB, nên cần chừa biên an toàn.',
+        'tức trần số học khoảng 1953MB, nên cần chừa biên an toàn.',
     )
   }
 

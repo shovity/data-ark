@@ -47,3 +47,29 @@ diff <(cut -d' ' -f1 /tmp/thu.sha) <(sha256sum /tmp/thu-lai.bin | cut -d' ' -f1)
   phải nói rõ chưa lưu gì, chạy lại sẽ tải lại từ đầu — khác với upload.
 - **Chưa có đích:** đổi tên `~/.data-ark/config.json` thành bản sao, xoá
   `defaultChat`, rồi chạy upload không kèm `--to`. Phải thấy thông báo có chữ `--to`.
+
+## Hai trường hợp quanh ngưỡng 10MB
+
+Telegram tách hai API upload: từ trên 10MB mới được dùng nhóm "big", dưới ngưỡng
+đó phải dùng `upload.saveFilePart`. Bộ test tự động chỉ kiểm được request nào
+được phát ra, còn việc máy chủ có nhận hay không thì phải thử thật.
+
+```bash
+# A. File nhỏ hơn 10MB — cả file nằm gọn trong một chunk dưới ngưỡng
+head -c 5242880 /dev/urandom > /tmp/thu-nho.bin        # 5MB
+sha256sum /tmp/thu-nho.bin
+node bin/data-ark.js /tmp/thu-nho.bin --to @kho_thu_nghiem
+node bin/data-ark.js restore <backup-id> --out /tmp/thu-nho-lai.bin
+sha256sum /tmp/thu-nho-lai.bin                          # phải khớp
+
+# B. File đúng chunkSize + 1 byte — chunk cuối chỉ có 1 byte
+head -c 10485761 /dev/urandom > /tmp/thu-du1.bin        # 10MB + 1
+sha256sum /tmp/thu-du1.bin
+node bin/data-ark.js /tmp/thu-du1.bin --to @kho_thu_nghiem --chunk-size 10MB
+node bin/data-ark.js restore <backup-id> --out /tmp/thu-du1-lai.bin
+sha256sum /tmp/thu-du1-lai.bin                          # phải khớp
+```
+
+Cả hai phải chạy trót lọt, không có lỗi kiểu `FILE_PARTS_INVALID` hay
+`FILE_PART_SIZE_INVALID`, và restore phải cho ra đúng sha256 ban đầu. Ở kịch bản
+B, chunk thứ hai đúng 1 byte — đây là chunk nhỏ nhất mà data-ark có thể sinh ra.

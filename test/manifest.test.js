@@ -96,3 +96,57 @@ test('parseManifest phát hiện tổng size lệch', () => {
 test('parseManifest từ chối JSON hỏng', () => {
   assert.throws(() => parseManifest('{ hỏng'), /đọc được/)
 })
+
+test('parseManifest bắt bố cục chunk lệch dù tổng size vẫn đúng', () => {
+  // 1000 byte, chunkSize 400 → phải là [400, 400, 200]. Bộ [200, 400, 400] có
+  // tổng đúng, số chunk đúng, i liên tục, sha256 từng chunk khớp — nhưng restore
+  // ghi chunk i vào offset i*400 nên sẽ tạo ra file 1200 byte thủng lỗ.
+  const m = buildManifest({
+    id: 'ark-1',
+    name: 'data.tar',
+    size: 1000,
+    chunkSize: 400,
+    chunks: [
+      { i: 0, msgId: 1, size: 200, sha256: 'a' },
+      { i: 1, msgId: 2, size: 400, sha256: 'b' },
+      { i: 2, msgId: 3, size: 400, sha256: 'c' },
+    ],
+    createdAt: '2026-09-05T07:40:12.000Z',
+  })
+
+  assert.throws(() => parseManifest(JSON.stringify(m)), /Chunk 1 .*200 byte.*400 byte/s)
+})
+
+test('parseManifest bắt chunk cuối dài hơn phần dư', () => {
+  const m = buildManifest({
+    id: 'ark-1',
+    name: 'data.tar',
+    size: 100,
+    chunkSize: 40,
+    chunks: [
+      { i: 0, msgId: 1, size: 30, sha256: 'a' },
+      { i: 1, msgId: 2, size: 30, sha256: 'b' },
+      { i: 2, msgId: 3, size: 40, sha256: 'c' },
+    ],
+    createdAt: '2026-09-05T07:40:12.000Z',
+  })
+
+  assert.throws(() => parseManifest(JSON.stringify(m)), /sai vị trí các chunk/)
+})
+
+test('parseManifest chấp nhận bố cục đều đúng chuẩn', () => {
+  const m = buildManifest({
+    id: 'ark-1',
+    name: 'data.tar',
+    size: 1000,
+    chunkSize: 400,
+    chunks: [
+      { i: 0, msgId: 1, size: 400, sha256: 'a' },
+      { i: 1, msgId: 2, size: 400, sha256: 'b' },
+      { i: 2, msgId: 3, size: 200, sha256: 'c' },
+    ],
+    createdAt: '2026-09-05T07:40:12.000Z',
+  })
+
+  assert.deepEqual(parseManifest(JSON.stringify(m)), m)
+})

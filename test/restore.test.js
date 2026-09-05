@@ -36,7 +36,7 @@ function fakeBackup({ id = 'ark-20260905-7f3a91', name = 'data.tar', chunkSize =
   return { id, content, messages, manifest, manifestBytes }
 }
 
-function fakeClient(backup, { hideMessageId = null, corruptMessageId = null } = {}) {
+function fakeClient(backup, { hideMessageId = null, corruptMessageId = null, truncateMessageId = null } = {}) {
   const visible = backup.messages.filter((m) => m.id !== hideMessageId)
 
   return {
@@ -50,7 +50,9 @@ function fakeClient(backup, { hideMessageId = null, corruptMessageId = null } = 
       return visible.find((m) => m.id === msgId) ?? null
     },
     iterDownload({ file }) {
-      const bytes = file.id === corruptMessageId ? randomBytes(file.bytes.length) : file.bytes
+      let bytes = file.bytes
+      if (file.id === corruptMessageId) bytes = randomBytes(file.bytes.length)
+      if (file.id === truncateMessageId) bytes = file.bytes.subarray(0, file.bytes.length - 10)
       return (async function* () {
         yield bytes
       })()
@@ -239,4 +241,82 @@ test('tiến trình chunk cập nhật theo dữ liệu đã tải, không kẹt
   } finally {
     await handle.close()
   }
+})
+
+test('chunk về thiếu byte thì báo đúng số byte lệch, không chỉ nói sha256', async () => {
+  const backup = fakeBackup()
+  const { dir, configDir } = await tempConfig()
+  const out = path.join(dir, 'ra.tar')
+  const client = fakeClient(backup, { truncateMessageId: 1001 })
+
+  await assert.rejects(
+    () => runRestore(backup.id, { out }, deps(client, configDir)),
+    /Chunk 2 có 390 byte, manifest ghi 400 byte/,
+  )
+
+  const files = await fs.readdir(dir)
+  assert.ok(files.includes('ra.tar.partial'), 'giữ .partial để điều tra')
+  assert.ok(!files.includes('ra.tar'), 'không được đổi tên thành file thật')
+})
+
+test('tên trong manifest là ".." thì từ chối và bảo dùng --out', async () => {
+  const backup = fakeBackup({ name: '..' })
+  const { dir, configDir } = await tempConfig()
+  const cwd = process.cwd()
+  process.chdir(dir)
+
+  try {
+    await assert.rejects(() => runRestore(backup.id, {}, deps(fakeClient(backup), configDir)), /--out/)
+
+    const files = await fs.readdir(path.dirname(dir))
+    assert.ok(
+      !files.some((f) => f.endsWith('.partial')),
+      'không được tạo .partial ở thư mục cha',
+    )
+  } finally {
+    process.chdir(cwd)
+  }
+})
+
+test('tên trong manifest là "." hoặc rỗng cũng bị từ chối', async () => {
+  for (const name of ['.', '', '/']) {
+    const backup = fakeBackup({ name })
+    const { dir, configDir } = await tempConfig()
+    const cwd = process.cwd()
+    process.chdir(dir)
+
+    try {
+      await assert.rejects(
+        () => runRestore(backup.id, {}, deps(fakeClient(backup), configDir)),
+        /--out/,
+        `tên ${JSON.stringify(name)} phải bị từ chối`,
+      )
+    } finally {
+      process.chdir(cwd)
+    }
+  }
+})
+
+test('file ghép xong sai độ dài thì báo lỗi thay vì đổi tên', async () => {
+  const backup = fakeBackup()
+  const { dir, configDir } = await tempConfig()
+  const out = path.join(dir, 'ra.tar')
+
+  // Giả lập một lỗi bố cục: chunk cuối bị ghi lệch 100 byte về sau, nhưng vẫn
+  // báo về đúng size và sha256 nên mọi kiểm tra theo chunk đều xanh.
+  const base = deps(fakeClient(backup), configDir)
+  const lech = {
+    ...base,
+    downloadChunk: (c, message, handle, offset, onProgress) =>
+      base.downloadChunk(c, message, handle, message.id === 1002 ? offset + 100 : offset, onProgress),
+  }
+
+  await assert.rejects(
+    () => runRestore(backup.id, { out }, lech),
+    /File ghép xong có 1100 byte, manifest ghi 1000 byte/,
+  )
+
+  const files = await fs.readdir(dir)
+  assert.ok(files.includes('ra.tar.partial'))
+  assert.ok(!files.includes('ra.tar'))
 })

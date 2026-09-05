@@ -7,24 +7,28 @@ import path from 'node:path'
 
 import { Api } from 'telegram'
 
-import { uploadRange } from '../src/uploader.js'
+import { uploadRange, LARGE_FILE_THRESHOLD } from '../src/uploader.js'
 
 /**
- * Client giả: ghi lại mọi request SaveBigFilePart để test có thể ghép
- * các part lại và so với dải byte gốc.
+ * Client giả: ghi lại mọi request upload để test có thể ghép các part lại,
+ * so với dải byte gốc, và kiểm xem API nào đã được dùng.
  */
-function fakeClient({ failFirstPart = false } = {}) {
+function fakeClient({ failFirstPart = false, failEveryPart = false } = {}) {
   const requests = []
   let failed = false
 
   return {
     requests,
     async invoke(request) {
+      if (failEveryPart) {
+        throw new Error('mạng lỗi')
+      }
       if (failFirstPart && !failed && request.filePart === 0) {
         failed = true
         throw new Error('mạng lỗi')
       }
       requests.push({
+        className: request.className,
         fileId: request.fileId.toString(),
         filePart: request.filePart,
         fileTotalParts: request.fileTotalParts,
@@ -101,12 +105,12 @@ test('chỉ upload đúng dải byte được yêu cầu, không phải cả fil
   await handle.close()
 })
 
-test('mọi part dùng chung một fileId và cùng fileTotalParts', async () => {
+test('mọi part dùng chung một fileId và đủ số thứ tự', async () => {
   const content = randomBytes(3000)
   const { handle } = await tempFile(content)
   const client = fakeClient()
 
-  const result = await uploadRange(client, handle.fd, {
+  await uploadRange(client, handle.fd, {
     offset: 0,
     length: content.length,
     fileName: 'x',
@@ -115,7 +119,6 @@ test('mọi part dùng chung một fileId và cùng fileTotalParts', async () =>
 
   const fileIds = new Set(client.requests.map((r) => r.fileId))
   assert.equal(fileIds.size, 1)
-  assert.ok(client.requests.every((r) => r.fileTotalParts === result.parts))
   assert.deepEqual(
     client.requests.map((r) => r.filePart).sort((a, b) => a - b),
     [0, 1, 2, 3, 4, 5],
@@ -159,7 +162,7 @@ test('part cuối ngắn hơn part size', async () => {
   await handle.close()
 })
 
-test('trả về InputFileBig dùng được cho sendFile', async () => {
+test('dải byte <= 10MB dùng SaveFilePart và trả về InputFile', async () => {
   const content = randomBytes(1000)
   const { handle } = await tempFile(content)
   const client = fakeClient()
@@ -171,9 +174,62 @@ test('trả về InputFileBig dùng được cho sendFile', async () => {
     partSize: 512,
   })
 
-  assert.ok(result.inputFile instanceof Api.InputFileBig)
+  assert.ok(
+    client.requests.every((r) => r.className === 'upload.SaveFilePart'),
+    `phải dùng SaveFilePart: ${client.requests.map((r) => r.className).join(', ')}`,
+  )
+  assert.ok(
+    client.requests.every((r) => r.fileTotalParts === undefined),
+    'SaveFilePart không có trường fileTotalParts',
+  )
+
+  assert.ok(result.inputFile instanceof Api.InputFile)
+  assert.ok(!(result.inputFile instanceof Api.InputFileBig))
   assert.equal(result.inputFile.name, 'ark-1.part0001')
   assert.equal(result.inputFile.parts, 2)
+  assert.equal(result.inputFile.md5Checksum, '')
+  await handle.close()
+})
+
+test('đúng 10MB vẫn là phía nhỏ của ngưỡng', async () => {
+  const content = randomBytes(LARGE_FILE_THRESHOLD)
+  const { handle } = await tempFile(content)
+  const client = fakeClient()
+
+  const result = await uploadRange(client, handle.fd, {
+    offset: 0,
+    length: content.length,
+    fileName: 'ark-1.part0001',
+  })
+
+  assert.ok(result.inputFile instanceof Api.InputFile)
+  assert.ok(client.requests.every((r) => r.className === 'upload.SaveFilePart'))
+  await handle.close()
+})
+
+test('dải byte > 10MB dùng SaveBigFilePart và trả về InputFileBig', async () => {
+  const content = randomBytes(LARGE_FILE_THRESHOLD + 1)
+  const { handle } = await tempFile(content)
+  const client = fakeClient()
+
+  const result = await uploadRange(client, handle.fd, {
+    offset: 0,
+    length: content.length,
+    fileName: 'ark-1.part0001',
+  })
+
+  assert.ok(
+    client.requests.every((r) => r.className === 'upload.SaveBigFilePart'),
+    `phải dùng SaveBigFilePart: ${client.requests.map((r) => r.className).join(', ')}`,
+  )
+  assert.ok(
+    client.requests.every((r) => r.fileTotalParts === result.parts),
+    'SaveBigFilePart phải mang fileTotalParts',
+  )
+
+  assert.ok(result.inputFile instanceof Api.InputFileBig)
+  assert.equal(result.inputFile.name, 'ark-1.part0001')
+  assert.equal(result.sha256, createHash('sha256').update(content).digest('hex'))
   await handle.close()
 })
 
@@ -222,4 +278,41 @@ test('onProgress báo số byte đã gửi, cộng dồn tới đúng tổng', a
 
   assert.equal(seen.reduce((a, b) => a + b, 0), 2000)
   await handle.close()
+})
+
+test('lỗi đọc file giữa lô không sinh unhandledRejection che mất lỗi thật', async () => {
+  const content = randomBytes(2000)
+  const { handle } = await tempFile(content)
+  // Mọi request đều hỏng, nên các promise đã push chắc chắn sẽ reject sau khi
+  // vòng đọc gãy vì đọc quá cuối file.
+  const client = fakeClient({ failEveryPart: true })
+
+  const unhandled = []
+  const onUnhandled = (reason) => unhandled.push(reason)
+  process.on('unhandledRejection', onUnhandled)
+
+  try {
+    await assert.rejects(
+      () =>
+        uploadRange(client, handle.fd, {
+          offset: 0,
+          // Đòi nhiều byte hơn file có: readExactly sẽ ném ở part cuối.
+          length: 3000,
+          fileName: 'x',
+          partSize: 512,
+          concurrency: 8,
+          retryOptions: { attempts: 1 },
+        }),
+      /Đọc hụt/,
+    )
+
+    // Cho event loop một nhịp để unhandledRejection kịp bắn nếu có.
+    await new Promise((resolve) => setImmediate(resolve))
+    await new Promise((resolve) => setImmediate(resolve))
+
+    assert.deepEqual(unhandled, [], 'không được để promise nào rơi ra ngoài')
+  } finally {
+    process.off('unhandledRejection', onUnhandled)
+    await handle.close()
+  }
 })
