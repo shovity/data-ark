@@ -16,7 +16,10 @@ const read = promisify(readCallback)
 export const LARGE_FILE_THRESHOLD = 10 * 1024 * 1024
 
 async function readExactly(fd, length, position) {
-  const buffer = Buffer.alloc(length)
+  // allocUnsafe skips zero-filling 512KB per part — about 0.4s of memset per 1800MB chunk,
+  // on the same thread that drives the in-flight requests. Safe only because the loop below
+  // either fills every byte or throws: no uninitialised byte can reach a request or the hash.
+  const buffer = Buffer.allocUnsafe(length)
   let filled = 0
 
   while (filled < length) {
