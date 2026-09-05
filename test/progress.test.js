@@ -128,3 +128,114 @@ test('createProgress pads a redraw so a shorter line cannot leave stale characte
     widest = drawn.length
   }
 })
+
+test('renderProgress measures speed by what this run moved, not by what the file has', () => {
+  const line = renderProgress({
+    done: 600,
+    total: 1000,
+    elapsedMs: 1000,
+    transferred: 100,
+    label: 'Chunk 2/3',
+    width: 10,
+  })
+
+  assert.match(line, /60%/)
+  assert.match(line, /600 B\/1000 B/)
+  assert.match(line, /100 B\/s/)
+  // 400 bytes left at 100 B/s. Counting the resumed 500 as speed would say ETA 1s.
+  assert.match(line, /ETA 4s/)
+})
+
+test('renderProgress without transferred is unchanged', () => {
+  const shape = { done: 500, total: 1000, elapsedMs: 1000, label: 'x', width: 10 }
+
+  assert.equal(renderProgress(shape), renderProgress({ ...shape, transferred: 500 }))
+})
+
+test('createProgress starts the bar at the bytes a previous run already sent', () => {
+  const lines = []
+  let clock = 0
+
+  const progress = createProgress({
+    total: 1000,
+    done: 400,
+    label: 'Chunk 2/3',
+    write: (line) => lines.push(line),
+    now: () => clock,
+    minIntervalMs: 0,
+  })
+
+  clock = 1000
+  progress.advance(100)
+
+  assert.equal(lines.length, 1)
+  assert.match(lines[0], /50%/)
+  assert.match(lines[0], /500 B\/1000 B/)
+  assert.match(lines[0], /100 B\/s/)
+})
+
+test('setLabel redraws at once, whatever the throttle says', () => {
+  const lines = []
+
+  const progress = createProgress({
+    total: 1000,
+    label: 'Chunk 1/3',
+    write: (line) => lines.push(line),
+    now: () => 0,
+    minIntervalMs: 1000,
+  })
+
+  progress.advance(100)
+  assert.equal(lines.length, 0, 'the throttle swallows the advance')
+
+  progress.setLabel('Chunk 2/3')
+
+  assert.equal(lines.length, 1)
+  assert.match(lines[0], /Chunk 2\/3/)
+  assert.match(lines[0], /10%/)
+  assert.doesNotMatch(lines[0], /\n$/, 'only finish ends the line')
+
+  progress.advance(100)
+  assert.equal(lines.length, 1, 'setLabel counts as a draw for the throttle')
+})
+
+test('one bar survives a change of label: the percentage never restarts', () => {
+  const lines = []
+  let clock = 0
+
+  const progress = createProgress({
+    total: 1000,
+    label: 'Chunk 1/3',
+    write: (line) => lines.push(line),
+    now: () => (clock += 100),
+    minIntervalMs: 0,
+  })
+
+  for (const [label, bytes] of [
+    ['Chunk 1/3', 400],
+    ['Chunk 2/3', 400],
+    ['Chunk 3/3', 200],
+  ]) {
+    progress.setLabel(label)
+    progress.advance(bytes)
+  }
+
+  progress.finish()
+
+  const percents = lines.map((line) => Number(line.match(/(\d+)%/)[1]))
+
+  for (let i = 1; i < percents.length; i += 1) {
+    assert.ok(percents[i] >= percents[i - 1], `${percents[i]}% came after ${percents[i - 1]}%`)
+  }
+
+  assert.equal(percents.at(-1), 100)
+  assert.equal(
+    lines.filter((line) => line.endsWith('\n')).length,
+    1,
+    'the bar owns one line from start to finish',
+  )
+  assert.ok(
+    lines.every((line) => line.includes('/1000 B')),
+    'every redraw counts against the whole transfer, never against one chunk',
+  )
+})

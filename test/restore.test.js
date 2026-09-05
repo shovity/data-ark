@@ -69,13 +69,14 @@ function deps(client, configDir) {
     searchManifest: (c, peer, query) => c.searchManifest(peer, query),
     readMessageBytes: (c, message) => c.readMessageBytes(message),
     getMessage: (c, peer, msgId) => c.getMessage(peer, msgId),
-    downloadChunk: async (c, message, handle, offset) => {
+    downloadChunk: async (c, message, handle, offset, onProgress) => {
       const hash = createHash('sha256')
       let written = 0
       for await (const buf of c.iterDownload({ file: { id: message.id, bytes: message.bytes } })) {
         await handle.write(buf, 0, buf.length, offset + written)
         hash.update(buf)
         written += buf.length
+        onProgress?.(buf.length)
       }
       return { sha256: hash.digest('hex'), size: written }
     },
@@ -423,4 +424,69 @@ test('realDownloadChunk carries the retry options through to the downloader', as
   await handle.close()
   assert.equal(result.size, 100)
   assert.deepEqual(attempts, ['-503: Timeout (caused by upload.GetFile)'])
+})
+
+test('restore draws one bar for the whole file, not one per chunk', async () => {
+  const backup = fakeBackup()
+  const { dir, configDir } = await tempConfig()
+  const out = path.join(dir, 'out.tar')
+  const written = []
+
+  await runRestore(backup.id, { out }, {
+    ...deps(fakeClient(backup), configDir),
+    silent: false,
+    log: () => {},
+    writeErr: (line) => written.push(line),
+  })
+
+  const text = written.join('')
+  assert.match(text, /Chunk 1\/3/)
+  assert.match(text, /Chunk 2\/3/)
+  assert.match(text, /Chunk 3\/3/)
+
+  assert.equal(
+    written.filter((line) => line.endsWith('\n')).length,
+    1,
+    'the bar owns one line for the whole restore',
+  )
+  assert.ok(
+    written.every((line) => line.includes('/1000 B')),
+    'the total is the file, never the chunk in flight',
+  )
+  assert.doesNotMatch(text, /\/400 B/)
+
+  const percents = written.map((line) => Number(line.match(/(\d+)%/)[1]))
+
+  for (let i = 1; i < percents.length; i += 1) {
+    assert.ok(percents[i] >= percents[i - 1], `${percents[i]}% came after ${percents[i - 1]}%`)
+  }
+
+  assert.deepEqual(percents.at(0), 0)
+  assert.ok(percents.includes(40), 'the bar carries chunk 1 over into chunk 2')
+  assert.ok(percents.includes(80), 'the bar carries chunk 2 over into chunk 3')
+  assert.equal(percents.at(-1), 100)
+})
+
+test('a chunk that fails still closes the bar line before the error', async () => {
+  const backup = fakeBackup()
+  const { dir, configDir } = await tempConfig()
+  const out = path.join(dir, 'out.tar')
+  const written = []
+
+  await assert.rejects(
+    runRestore(backup.id, { out }, {
+      ...deps(fakeClient(backup, { truncateMessageId: 1001 }), configDir),
+      silent: false,
+      log: () => {},
+      writeErr: (line) => written.push(line),
+    }),
+    /Chunk 2 has 390 bytes/,
+  )
+
+  assert.match(
+    written.at(-1),
+    /\n$/,
+    'the cursor is left on a fresh line so the error does not land on the bar',
+  )
+  assert.doesNotMatch(written.at(-1), /100%/)
 })

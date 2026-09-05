@@ -135,45 +135,58 @@ export async function runRestore(backupId, options = {}, deps = {}) {
     try {
       await handle.truncate(manifest.size)
 
-      for (const chunk of manifest.chunks) {
-        const message = await getMessage(client, chat, chunk.msgId)
+      // One bar for the whole restore. The label names the chunk in flight, but the bar, the
+      // byte counts, the speed and the ETA all describe the file, so the line runs 0% to 100%
+      // once instead of restarting at every chunk boundary — with 1800MB chunks, a per-chunk
+      // ETA answers a question nobody asked.
+      // warn is already the no-op when silent, and createProgress draws through nothing else.
+      const progress = createProgress({
+        total: manifest.size,
+        label: `Chunk 1/${manifest.chunks.length}`,
+        write: warn,
+      })
 
-        if (!message) {
-          throw new Error(
-            `Missing chunk ${chunk.i + 1}/${manifest.chunks.length}: message ${chunk.msgId} is no longer in ${chat}. ` +
-              'This backup cannot be restored.',
+      try {
+        for (const chunk of manifest.chunks) {
+          // Before getMessage, not after: the bar is then on screen from the first moment,
+          // and finish() below always has a line to close.
+          progress.setLabel(`Chunk ${chunk.i + 1}/${manifest.chunks.length}`)
+
+          const message = await getMessage(client, chat, chunk.msgId)
+
+          if (!message) {
+            throw new Error(
+              `Missing chunk ${chunk.i + 1}/${manifest.chunks.length}: message ${chunk.msgId} is no longer in ${chat}. ` +
+                'This backup cannot be restored.',
+            )
+          }
+
+          const { sha256, size } = await downloadChunk(
+            client,
+            message,
+            handle,
+            chunk.i * manifest.chunkSize,
+            progress.advance,
+            { ...retryOptions, onRetry },
           )
+
+          if (size !== chunk.size) {
+            throw new Error(
+              `Chunk ${chunk.i + 1} has ${size} bytes, the manifest records ${chunk.size} bytes — mismatch.`,
+            )
+          }
+
+          if (sha256 !== chunk.sha256) {
+            throw new Error(
+              `Chunk ${chunk.i + 1} has a sha256 that does not match the manifest. The download is kept at ${partial} for inspection.`,
+            )
+          }
         }
-
-        // warn is already the no-op when silent, and createProgress draws through nothing else.
-        const progress = createProgress({
-          total: chunk.size,
-          label: `Chunk ${chunk.i + 1}/${manifest.chunks.length}`,
-          write: warn,
-        })
-
-        const { sha256, size } = await downloadChunk(
-          client,
-          message,
-          handle,
-          chunk.i * manifest.chunkSize,
-          progress.advance,
-          { ...retryOptions, onRetry },
-        )
-
+      } finally {
+        // The bar owns a line that \r keeps returning to. Ending it here rather than after the
+        // loop means a chunk that fails mid-download still leaves the cursor on a fresh line,
+        // so "Error: ..." does not land on top of the bar.
         progress.finish()
-
-        if (size !== chunk.size) {
-          throw new Error(
-            `Chunk ${chunk.i + 1} has ${size} bytes, the manifest records ${chunk.size} bytes — mismatch.`,
-          )
-        }
-
-        if (sha256 !== chunk.sha256) {
-          throw new Error(
-            `Chunk ${chunk.i + 1} has a sha256 that does not match the manifest. The download is kept at ${partial} for inspection.`,
-          )
-        }
       }
     } finally {
       await handle.close()

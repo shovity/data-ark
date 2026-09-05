@@ -71,6 +71,7 @@ export async function runUpload(filePath, options = {}, deps = {}) {
     partSize = PART_SIZE,
     retryOptions = {},
     writeErr = (line) => process.stderr.write(line),
+    log: writeLog = (line) => console.log(line),
     silent = false,
     onBackupId = () => {},
   } = deps
@@ -164,7 +165,7 @@ export async function runUpload(filePath, options = {}, deps = {}) {
 
   onBackupId(state.id)
 
-  const log = silent ? () => {} : (line) => console.log(line)
+  const log = silent ? () => {} : writeLog
   const warn = silent ? () => {} : writeErr
 
   // Retries and FLOOD_WAIT must be announced: a silent FLOOD_WAIT_3600 leaves the user
@@ -191,50 +192,75 @@ export async function runUpload(filePath, options = {}, deps = {}) {
   const client = await connect(config, { verbose: options.verbose })
 
   try {
+    // Everything already in the chat is reported before the bar exists. These lines go to
+    // stdout while the bar is rewritten on stderr with \r, so printed from inside the loop
+    // they would land straight on the line the bar keeps returning to.
+    const pending = []
+
     for (const chunk of chunks) {
       if (state.done[String(chunk.i)]) {
         log(`Chunk ${chunk.i + 1}/${chunks.length} already uploaded, skipping.`)
         continue
       }
 
-      const fileName = chunkFileName(state.id, chunk.i)
-      const handle = await fs.open(absPath, 'r')
+      pending.push(chunk)
+    }
 
+    // A run that only failed to send the manifest has every chunk done and nothing left to
+    // transfer: no bar at all, rather than one that springs into existence at 100%.
+    if (pending.length > 0) {
+      const remaining = pending.reduce((sum, chunk) => sum + chunk.length, 0)
+
+      // One bar for the whole upload: the label names the chunk in flight, everything else
+      // describes the file. Chunks a previous run sent count towards the bar but not towards
+      // the speed, so an hour-old chunk cannot inflate the ETA of the ones still to go.
       // warn is already the no-op when silent, and createProgress draws through nothing else.
       const progress = createProgress({
-        total: chunk.length,
-        label: `Chunk ${chunk.i + 1}/${chunks.length}`,
+        total: stat.size,
+        done: stat.size - remaining,
+        label: `Chunk ${pending[0].i + 1}/${chunks.length}`,
         write: warn,
       })
 
       try {
-        const { inputFile, sha256 } = await uploadRange(client, handle.fd, {
-          offset: chunk.offset,
-          length: chunk.length,
-          fileName,
-          concurrency,
-          partSize,
-          onProgress: (bytes) => progress.advance(bytes),
-          retryOptions: { ...retryOptions, onRetry },
-        })
+        for (const chunk of pending) {
+          progress.setLabel(`Chunk ${chunk.i + 1}/${chunks.length}`)
 
-        progress.finish()
+          const fileName = chunkFileName(state.id, chunk.i)
+          const handle = await fs.open(absPath, 'r')
 
-        const message = await sendChunk(client, chat, {
-          inputFile,
-          fileName,
-          caption: chunkCaption({ id: state.id, number: chunk.i + 1, total: chunks.length }),
-        })
+          try {
+            const { inputFile, sha256 } = await uploadRange(client, handle.fd, {
+              offset: chunk.offset,
+              length: chunk.length,
+              fileName,
+              concurrency,
+              partSize,
+              onProgress: (bytes) => progress.advance(bytes),
+              retryOptions: { ...retryOptions, onRetry },
+            })
 
-        state = await markChunkDone(
-          key,
-          state,
-          chunk.i,
-          { msgId: message.id, size: chunk.length, sha256 },
-          configDir,
-        )
+            const message = await sendChunk(client, chat, {
+              inputFile,
+              fileName,
+              caption: chunkCaption({ id: state.id, number: chunk.i + 1, total: chunks.length }),
+            })
+
+            state = await markChunkDone(
+              key,
+              state,
+              chunk.i,
+              { msgId: message.id, size: chunk.length, sha256 },
+              configDir,
+            )
+          } finally {
+            await handle.close()
+          }
+        }
       } finally {
-        await handle.close()
+        // Same reason as restore: a send that fails must not leave "Error: ..." printed over
+        // the bar's own line.
+        progress.finish()
       }
     }
 
