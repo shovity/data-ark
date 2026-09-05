@@ -123,6 +123,30 @@ test('mọi part dùng chung một fileId và cùng fileTotalParts', async () =>
   await handle.close()
 })
 
+test('nhiều lô (concurrency thấp hơn số part): không part nào bị bỏ sót hay gửi trùng', async () => {
+  const content = randomBytes(3000)
+  const { handle } = await tempFile(content)
+  const client = fakeClient()
+
+  const result = await uploadRange(client, handle.fd, {
+    offset: 0,
+    length: content.length,
+    fileName: 'x',
+    partSize: 512,
+    concurrency: 2,
+  })
+
+  assert.equal(result.parts, 6)
+
+  const filePartValues = client.requests.map((r) => r.filePart)
+  assert.deepEqual([...filePartValues].sort((a, b) => a - b), [0, 1, 2, 3, 4, 5])
+  assert.equal(new Set(filePartValues).size, filePartValues.length)
+
+  assert.deepEqual(reassemble(client.requests), content)
+  assert.equal(result.sha256, createHash('sha256').update(content).digest('hex'))
+  await handle.close()
+})
+
 test('part cuối ngắn hơn part size', async () => {
   const content = randomBytes(1025)
   const { handle } = await tempFile(content)

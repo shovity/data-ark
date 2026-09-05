@@ -40,8 +40,7 @@ export async function uploadRange(client, fd, options) {
 
   if (totalParts > MAX_PARTS) {
     throw new Error(
-      `Dải byte này cần ${totalParts} phần, trong khi Telegram chỉ nhận 4000 phần mỗi file. ` +
-        'Hãy giảm --chunk-size.',
+      `Dải byte này cần ${totalParts} phần, trong khi Telegram chỉ nhận tối đa 4000 phần mỗi file.`,
     )
   }
 
