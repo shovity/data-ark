@@ -1,0 +1,24 @@
+{
+  "name": "data-ark",
+  "version": "0.1.0",
+  "description": "Cắt file lớn thành chunk và lưu trữ trên Telegram",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "data-ark": "bin/data-ark.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test test/"
+  },
+  "dependencies": {
+    "telegram": "^2.26.22"
+  }
+}
