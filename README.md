@@ -26,6 +26,7 @@ data-ark signs in with your own Telegram account (MTProto), not a bot. That is a
 | `--chunk-size <n>` | `1800MB` | e.g. `1.8GB`, `500MB`. Hard ceiling 1950MB. |
 | `--concurrency <n>` | `8` | 512KB parts sent in parallel. An integer from 1 to 64. |
 | `--out <path>` | the basename from the manifest | Where to write the restored file; relative paths resolve against the current directory |
+| `--verbose` | off | Show the Telegram client's own connection logs, hidden by default so they do not break up the progress bar |
 
 ## How it works
 

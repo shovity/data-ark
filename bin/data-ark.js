@@ -47,7 +47,7 @@ async function main() {
       return
 
     case 'login':
-      await runLogin()
+      await runLogin({ verbose: parsed.options.verbose })
       return
 
     case 'logout':

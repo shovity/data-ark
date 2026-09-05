@@ -7,6 +7,7 @@ const OPTIONS = {
   'chunk-size': { type: 'string' },
   concurrency: { type: 'string' },
   out: { type: 'string' },
+  verbose: { type: 'boolean' },
   help: { type: 'boolean', short: 'h' },
 }
 
@@ -23,6 +24,7 @@ Options:
   --chunk-size <n>       Size of each chunk, default 1800MB. Examples: 1.8GB, 500MB.
   --concurrency <n>      512KB parts sent in parallel, default 8, max 64.
   --out <path>           Where to write the restored file. Defaults to the basename in the manifest.
+  --verbose              Show Telegram connection logs, hidden by default.
   -h, --help             Show this help.
 `
 

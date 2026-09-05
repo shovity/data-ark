@@ -87,7 +87,7 @@ export async function runRestore(backupId, options = {}, deps = {}) {
   const log = silent ? () => {} : (line) => console.log(line)
   const warn = silent ? () => {} : writeErr
 
-  const client = await connect(config)
+  const client = await connect(config, { verbose: options.verbose })
 
   try {
     const manifestMessage = await searchManifest(client, chat, backupId)

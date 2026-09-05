@@ -5,7 +5,7 @@ import { TelegramClient } from 'telegram'
 import { StringSession } from 'telegram/sessions/index.js'
 
 import { loadConfig, saveConfig, defaultConfigDir } from '../config.js'
-import { normalizeChatTarget } from '../client.js'
+import { createLogger, normalizeChatTarget } from '../client.js'
 
 function createPrompts() {
   const rl = readline.createInterface({ input: stdin, output: stdout })
@@ -33,7 +33,11 @@ export function describeLoginError(err) {
   return `${description} (${message})`
 }
 
-export async function runLogin({ configDir = defaultConfigDir(), prompts = createPrompts() } = {}) {
+export async function runLogin({
+  configDir = defaultConfigDir(),
+  prompts = createPrompts(),
+  verbose = false,
+} = {}) {
   const config = await loadConfig(configDir)
 
   console.log('You need your own api_id and api_hash. Get them at https://my.telegram.org → API development tools.\n')
@@ -53,7 +57,10 @@ export async function runLogin({ configDir = defaultConfigDir(), prompts = creat
     throw new Error('Missing api_id or api_hash.')
   }
 
-  const client = new TelegramClient(new StringSession(''), apiId, apiHash, { connectionRetries: 5 })
+  const client = new TelegramClient(new StringSession(''), apiId, apiHash, {
+    connectionRetries: 5,
+    baseLogger: createLogger(verbose),
+  })
 
   await client.start({
     phoneNumber: () => prompts.ask('Phone number (e.g. +1...): '),

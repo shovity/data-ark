@@ -142,7 +142,7 @@ export async function runUpload(filePath, options = {}, deps = {}) {
   log(`File   ${absPath} (${formatBytes(stat.size)}, ${chunks.length} chunks)`)
   log(`To     ${chat}\n`)
 
-  const client = await connect(config)
+  const client = await connect(config, { verbose: options.verbose })
 
   try {
     for (const chunk of chunks) {

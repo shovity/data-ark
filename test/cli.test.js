@@ -48,3 +48,9 @@ test('the --out flag belongs to restore', () => {
 test('an invalid flag produces a clear error', () => {
   assert.throws(() => route(['data.tar', '--does-not-exist']), /--does-not-exist/)
 })
+
+test('--verbose is parsed as a flag', () => {
+  assert.equal(route(['big.iso', '--verbose']).options.verbose, true)
+  assert.equal(route(['big.iso']).options.verbose, undefined)
+  assert.equal(route(['restore', 'ark-1', '--verbose']).options.verbose, true)
+})
