@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 
-import { defaultConfigDir } from './config.js'
+import { defaultConfigDir, writeJsonAtomic } from './config.js'
 
 export function stateDir(configDir = defaultConfigDir()) {
   return path.join(configDir, 'state')
@@ -12,7 +12,7 @@ export function stateKey(absPath, size, mtimeMs) {
   return createHash('sha1').update(`${absPath}:${size}:${mtimeMs}`).digest('hex')
 }
 
-function stateFile(key, configDir) {
+export function stateFile(key, configDir = defaultConfigDir()) {
   return path.join(stateDir(configDir), `${key}.json`)
 }
 
@@ -27,14 +27,7 @@ export async function loadState(key, configDir = defaultConfigDir()) {
 }
 
 export async function saveState(key, state, configDir = defaultConfigDir()) {
-  const dir = stateDir(configDir)
-  await fs.mkdir(dir, { recursive: true, mode: 0o700 })
-
-  const file = stateFile(key, configDir)
-  const tmp = `${file}.tmp`
-
-  await fs.writeFile(tmp, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 })
-  await fs.rename(tmp, file)
+  await writeJsonAtomic(stateFile(key, configDir), state)
 }
 
 export async function markChunkDone(key, state, i, entry, configDir = defaultConfigDir()) {

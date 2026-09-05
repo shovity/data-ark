@@ -12,3 +12,10 @@ test('the GramJS pieces we depend on can be imported', () => {
   assert.equal(typeof Api.upload.SaveBigFilePart, 'function')
   assert.equal(typeof Api.InputFileBig, 'function')
 })
+
+// list and restore search the chat through these two, and the fake clients the rest of
+// the suite talks to would happily accept a name GramJS does not have.
+test('the GramJS pieces list and restore search with can be imported', () => {
+  assert.equal(typeof Api.InputMessagesFilterDocument, 'function')
+  assert.equal(typeof Api.DocumentAttributeFilename, 'function')
+})

@@ -6,6 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 
 import { runUpload } from '../src/commands/upload.js'
+import { parseManifestCaption } from '../src/caption.js'
 import { parseManifest } from '../src/manifest.js'
 import { loadState, stateKey } from '../src/state.js'
 
@@ -101,7 +102,43 @@ test('chunks are named and captioned after the backup id', async () => {
 
   const first = client.messages[0]
   assert.equal(first.fileName, `${result.id}.part0001`)
-  assert.match(first.caption, new RegExp(`#dataark ${result.id} 1/3`))
+  assert.equal(first.caption, `\u{1F4E6} ${result.id} \u00B7 1/3`)
+})
+
+test('the manifest carries the summary card someone reads in the chat', async () => {
+  const ws = await tempWorkspace(1000)
+  const client = fakeClient()
+
+  const result = await runUpload(
+    ws.filePath,
+    { to: '@store', 'chunk-size': '400' },
+    { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
+  )
+
+  const card = parseManifestCaption(client.messages.at(-1).caption)
+
+  assert.equal(card.id, result.id)
+  assert.equal(card.name, path.basename(ws.filePath))
+  assert.equal(card.chunks, 3)
+  assert.equal(card.size, '1000 B')
+})
+
+// list finds manifests by searching for the tag, so a chunk that carried it too would
+// turn every backup into as many hits as it has chunks.
+test('only the manifest carries the search tag', async () => {
+  const ws = await tempWorkspace(1000)
+  const client = fakeClient()
+
+  await runUpload(
+    ws.filePath,
+    { to: '@store', 'chunk-size': '400' },
+    { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
+  )
+
+  const tagged = client.messages.filter((m) => m.caption.includes('#dataark'))
+
+  assert.equal(tagged.length, 1)
+  assert.equal(tagged[0].fileName.endsWith('.manifest.json'), true)
 })
 
 test('the manifest is sent last and describes the chunks correctly', async () => {

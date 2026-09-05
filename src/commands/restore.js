@@ -3,32 +3,17 @@ import path from 'node:path'
 import readline from 'node:readline/promises'
 import { stdin, stdout } from 'node:process'
 
-import { Api } from 'telegram'
-
-import { connect as realConnect, requireChat } from '../client.js'
+import { closeQuietly, connect as realConnect, requireChat, searchDocuments } from '../client.js'
 import { defaultConfigDir, loadConfig } from '../config.js'
 import { downloadToFile } from '../downloader.js'
 import { manifestFileName, parseManifest } from '../manifest.js'
 import { createProgress, formatBytes } from '../progress.js'
 
-function documentFileName(message) {
-  const attributes = message?.media?.document?.attributes ?? []
-  const named = attributes.find((a) => a instanceof Api.DocumentAttributeFilename)
-  return named?.fileName ?? null
-}
-
 async function realSearchManifest(client, peer, backupId) {
   const wanted = manifestFileName(backupId)
+  const found = await searchDocuments(client, peer, { search: backupId, limit: 100 })
 
-  // Use client.getMessages instead of a raw Api.messages.Search: it handles offsets,
-  // hashes and pagination itself, so we don't hand-build easily mistyped fields.
-  const messages = await client.getMessages(peer, {
-    search: backupId,
-    filter: new Api.InputMessagesFilterDocument(),
-    limit: 100,
-  })
-
-  return messages.find((m) => documentFileName(m) === wanted) ?? null
+  return found.find((doc) => doc.fileName === wanted)?.message ?? null
 }
 
 async function realReadMessageBytes(client, message) {
@@ -136,13 +121,12 @@ export async function runRestore(backupId, options = {}, deps = {}) {
           )
         }
 
-        const progress = silent
-          ? { advance: () => {}, finish: () => {} }
-          : createProgress({
-              total: chunk.size,
-              label: `Chunk ${chunk.i + 1}/${manifest.chunks.length}`,
-              write: writeErr,
-            })
+        // warn is already the no-op when silent, and createProgress draws through nothing else.
+        const progress = createProgress({
+          total: chunk.size,
+          label: `Chunk ${chunk.i + 1}/${manifest.chunks.length}`,
+          write: warn,
+        })
 
         const { sha256, size } = await downloadChunk(
           client,
@@ -188,11 +172,8 @@ export async function runRestore(backupId, options = {}, deps = {}) {
 
     return { path: target, size: manifest.size }
   } finally {
-    // A failing disconnect must not swallow the real error already on its way up.
-    try {
-      await disconnect(client)
-    } catch (err) {
-      warn(`\nWarning: could not close the Telegram connection: ${err.message}\n`)
-    }
+    await closeQuietly(client, disconnect, (err) =>
+      warn(`\nWarning: could not close the Telegram connection: ${err.message}\n`),
+    )
   }
 }

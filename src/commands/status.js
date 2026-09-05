@@ -1,7 +1,7 @@
 import path from 'node:path'
 
-import { planChunks } from '../chunking.js'
-import { chatUrl, connect as realConnect } from '../client.js'
+import { countChunks } from '../chunking.js'
+import { assertLoggedIn, closeQuietly, connect as realConnect, describeChat } from '../client.js'
 import { defaultConfigDir, loadConfig } from '../config.js'
 import { runSetDestination } from './set-destination.js'
 import { formatBytes } from '../progress.js'
@@ -11,12 +11,6 @@ const LABEL_WIDTH = 'Destination'.length + 2
 
 function row(label, value) {
   return `${label.padEnd(LABEL_WIDTH)}${value}`
-}
-
-// A destination is worth more as something clickable than as a raw id, but Saved Messages
-// has no link to give, so it is named instead of being dressed up as one.
-function describeChat(chat) {
-  return chatUrl(chat) ?? `${chat} (Saved Messages)`
 }
 
 function describeAccount(me) {
@@ -32,8 +26,10 @@ function describeAccount(me) {
 async function accountLine(config, options, deps) {
   const { connect, disconnect } = deps
 
-  if (!config.session || !config.apiId || !config.apiHash) {
-    return 'Not logged in — run "npx data-ark login".'
+  try {
+    assertLoggedIn(config)
+  } catch (err) {
+    return err.message
   }
 
   let client
@@ -48,11 +44,7 @@ async function accountLine(config, options, deps) {
   } catch (err) {
     return `could not be read: ${err.message}`
   } finally {
-    try {
-      await disconnect(client)
-    } catch {
-      // A connection that will not close cleanly says nothing about the account itself.
-    }
+    await closeQuietly(client, disconnect)
   }
 }
 
@@ -92,7 +84,7 @@ export async function runStatus(options = {}, deps = {}) {
   log(row('Unfinished', `${states.length} backup${states.length === 1 ? '' : 's'}`))
 
   for (const state of states) {
-    const total = planChunks(state.size, state.chunkSize).length
+    const total = countChunks(state.size, state.chunkSize)
     const done = Object.keys(state.done ?? {}).length
 
     log(`  ${state.id}  ${path.basename(state.path)}  ${done}/${total} chunks  ${formatBytes(state.size)}`)

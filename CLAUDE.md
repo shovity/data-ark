@@ -44,9 +44,14 @@ for this and must not be relaxed to make a test pass:
 
 `src/uploader.js` and `src/downloader.js` know about byte ranges and Telegram's
 part APIs; they must not mention CLI flags like `--chunk-size` in their errors.
-`src/commands/*.js` own the user-facing narrative. `src/chunking.js`,
-`src/manifest.js`, `src/progress.js`, `src/retry.js`, `src/state.js` and
-`src/config.js` are pure enough to test without a client.
+`src/commands/*.js` own the user-facing narrative. `src/caption.js`,
+`src/chunking.js`, `src/manifest.js`, `src/progress.js`, `src/retry.js`,
+`src/state.js` and `src/config.js` are pure enough to test without a client.
+
+`src/caption.js` also owns the shape of what the chat shows. Captions are plain text:
+no parse mode, so no file name ever has to be escaped. The `#dataark` tag lives on the
+manifest alone — `list` searches for it, and a chunk carrying it would turn one backup
+into thirteen hits.
 
 Commands take their collaborators through a `deps` object so tests can pass fakes;
 keep that seam rather than importing the real client directly.

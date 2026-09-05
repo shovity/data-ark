@@ -1,4 +1,4 @@
-import { TelegramClient } from 'telegram'
+import { Api, TelegramClient } from 'telegram'
 import { Logger } from 'telegram/extensions/index.js'
 import { LogLevel } from 'telegram/extensions/Logger.js'
 import { StringSession } from 'telegram/sessions/index.js'
@@ -35,6 +35,59 @@ export function chatUrl(chat) {
   if (text === 'me') return null
 
   return `https://web.telegram.org/k/#${text}`
+}
+
+// How a destination is spoken about. "me" is a target, not a name someone would recognise
+// in a sentence, so every command that mentions a chat in prose goes through here.
+export function chatName(chat) {
+  return String(chat) === 'me' ? 'Saved Messages' : String(chat)
+}
+
+// A destination is worth more as something clickable than as a raw id, but Saved Messages
+// has no link to give, so it is named instead of being dressed up as one.
+export function describeChat(chat) {
+  const url = chatUrl(chat)
+
+  return url ?? `${chat} (${chatName(chat)})`
+}
+
+// The name Telegram shows under a document lives in an attribute, not on the message.
+export function documentFileName(message) {
+  const attributes = message?.media?.document?.attributes ?? []
+  const named = attributes.find((a) => a instanceof Api.DocumentAttributeFilename)
+  return named?.fileName ?? null
+}
+
+// The one place data-ark searches a chat. Both callers want documents and nothing else,
+// and getMessages is preferred over a raw Api.messages.Search because it handles offsets,
+// hashes and pagination itself, so we don't hand-build easily mistyped fields. The raw
+// message is kept alongside the flat fields because downloading needs it whole.
+export async function searchDocuments(client, peer, { search, limit }) {
+  const messages = await client.getMessages(peer, {
+    search,
+    filter: new Api.InputMessagesFilterDocument(),
+    limit,
+  })
+
+  return messages.map((message) => ({
+    id: message.id,
+    fileName: documentFileName(message),
+    caption: message.message ?? '',
+    date: message.date,
+    message,
+  }))
+}
+
+// Every command ends by putting the connection down, and a failure there must never
+// swallow the real error already on its way up. Commands that print progress hand in an
+// onWarn to say so; the quieter ones let it pass, because a connection that will not
+// close cleanly says nothing about the work that already succeeded.
+export async function closeQuietly(client, disconnect, onWarn) {
+  try {
+    await disconnect(client)
+  } catch (err) {
+    if (onWarn) onWarn(err)
+  }
 }
 
 export function requireChat(options, config) {

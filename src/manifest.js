@@ -1,5 +1,7 @@
 import { randomBytes } from 'node:crypto'
 
+import { countChunks } from './chunking.js'
+
 export const MANIFEST_VERSION = 1
 
 export function newBackupId(now = new Date(), randomHex = () => randomBytes(3).toString('hex')) {
@@ -61,7 +63,7 @@ export function parseManifest(input) {
     }
   })
 
-  const expectedChunks = Math.ceil(manifest.size / manifest.chunkSize)
+  const expectedChunks = countChunks(manifest.size, manifest.chunkSize)
   if (manifest.chunks.length !== expectedChunks) {
     throw new Error(`Manifest is missing ${expectedChunks - manifest.chunks.length} chunk(s).`)
   }

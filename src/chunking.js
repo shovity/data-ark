@@ -36,6 +36,12 @@ export function parseSize(input) {
   return bytes
 }
 
+// How many chunks a file of this size splits into. planChunks builds them and parseManifest
+// checks them against this same rule, so the layout has one definition, not three.
+export function countChunks(fileSize, chunkSize) {
+  return Math.ceil(fileSize / chunkSize)
+}
+
 export function planChunks(fileSize, chunkSize) {
   if (fileSize <= 0) {
     throw new Error('File is empty, nothing to upload.')

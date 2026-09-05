@@ -12,7 +12,8 @@ import {
   parseSize,
   planChunks,
 } from '../chunking.js'
-import { connect as realConnect, requireChat } from '../client.js'
+import { chunkCaption, manifestCaption } from '../caption.js'
+import { closeQuietly, connect as realConnect, describeChat, requireChat } from '../client.js'
 import { defaultConfigDir, loadConfig, saveConfig } from '../config.js'
 import {
   buildManifest,
@@ -22,27 +23,32 @@ import {
   serializeManifest,
 } from '../manifest.js'
 import { createProgress, formatBytes, formatDuration } from '../progress.js'
-import { clearState, loadState, markChunkDone, saveState, stateDir, stateKey } from '../state.js'
+import { clearState, loadState, markChunkDone, saveState, stateFile, stateKey } from '../state.js'
 import { uploadRange } from '../uploader.js'
 
 // Above this threshold the wait must be spelled out, per spec §8.
 const LONG_WAIT_MS = 60_000
 
-async function realSendChunk(client, peer, { inputFile, fileName, caption }) {
+// Chunks and manifests differ only in where the bytes come from. Everything Telegram is
+// told about them — document, not preview; this exact file name — is decided once.
+async function sendDocument(client, peer, { file, fileName, caption }) {
   return await client.sendFile(peer, {
-    file: inputFile,
+    file,
     caption,
     forceDocument: true,
     attributes: [new Api.DocumentAttributeFilename({ fileName })],
   })
 }
 
+async function realSendChunk(client, peer, { inputFile, fileName, caption }) {
+  return await sendDocument(client, peer, { file: inputFile, fileName, caption })
+}
+
 async function realSendManifest(client, peer, { bytes, fileName, caption }) {
-  return await client.sendFile(peer, {
+  return await sendDocument(client, peer, {
     file: new CustomFile(fileName, bytes.length, '', bytes),
+    fileName,
     caption,
-    forceDocument: true,
-    attributes: [new Api.DocumentAttributeFilename({ fileName })],
   })
 }
 
@@ -93,11 +99,11 @@ export async function runUpload(filePath, options = {}, deps = {}) {
   const resuming = Boolean(state) && state.chunkSize === chunkSize
 
   if (resuming && state.chat !== String(chat)) {
-    const stateFile = path.join(stateDir(configDir), `${key}.json`)
+    const file = stateFile(key, configDir)
     throw new Error(
       `This unfinished backup is going to ${state.chat}, but the current command targets ${chat} — ` +
         `a single backup cannot be split across two destinations. Run again without --to to keep ` +
-        `sending to ${state.chat}, or delete ${stateFile} and run again to start a new backup in ${chat}.`,
+        `sending to ${state.chat}, or delete ${file} and run again to start a new backup in ${chat}.`,
     )
   }
 
@@ -140,7 +146,7 @@ export async function runUpload(filePath, options = {}, deps = {}) {
 
   log(`Backup ${state.id}`)
   log(`File   ${absPath} (${formatBytes(stat.size)}, ${chunks.length} chunks)`)
-  log(`To     ${chat}\n`)
+  log(`To     ${describeChat(chat)}\n`)
 
   const client = await connect(config, { verbose: options.verbose })
 
@@ -154,13 +160,12 @@ export async function runUpload(filePath, options = {}, deps = {}) {
       const fileName = chunkFileName(state.id, chunk.i)
       const handle = await fs.open(absPath, 'r')
 
-      const progress = silent
-        ? { advance: () => {}, finish: () => {} }
-        : createProgress({
-            total: chunk.length,
-            label: `Chunk ${chunk.i + 1}/${chunks.length}`,
-            write: writeErr,
-          })
+      // warn is already the no-op when silent, and createProgress draws through nothing else.
+      const progress = createProgress({
+        total: chunk.length,
+        label: `Chunk ${chunk.i + 1}/${chunks.length}`,
+        write: warn,
+      })
 
       try {
         const { inputFile, sha256 } = await uploadRange(client, handle.fd, {
@@ -178,7 +183,7 @@ export async function runUpload(filePath, options = {}, deps = {}) {
         const message = await sendChunk(client, chat, {
           inputFile,
           fileName,
-          caption: `#dataark ${state.id} ${chunk.i + 1}/${chunks.length}`,
+          caption: chunkCaption({ id: state.id, number: chunk.i + 1, total: chunks.length }),
         })
 
         state = await markChunkDone(
@@ -218,7 +223,13 @@ export async function runUpload(filePath, options = {}, deps = {}) {
     await sendManifest(client, chat, {
       bytes: serializeManifest(manifest),
       fileName: manifestFileName(state.id),
-      caption: `#dataark ${state.id} manifest`,
+      caption: manifestCaption({
+        id: manifest.id,
+        name: manifest.name,
+        size: manifest.size,
+        chunks: manifest.chunks.length,
+        createdAt: manifest.createdAt,
+      }),
     })
 
     await clearState(key, configDir)
@@ -227,11 +238,8 @@ export async function runUpload(filePath, options = {}, deps = {}) {
 
     return { id: state.id, chunks: chunks.length }
   } finally {
-    // A failing disconnect must not swallow the real error already on its way up.
-    try {
-      await disconnect(client)
-    } catch (err) {
-      warn(`\nWarning: could not close the Telegram connection: ${err.message}\n`)
-    }
+    await closeQuietly(client, disconnect, (err) =>
+      warn(`\nWarning: could not close the Telegram connection: ${err.message}\n`),
+    )
   }
 }

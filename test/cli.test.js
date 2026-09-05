@@ -92,3 +92,18 @@ test('no arguments at all is still help', () => {
   assert.equal(route([]).command, 'help')
   assert.equal(route(['--chunk-size', '1GB']).command, 'help')
 })
+
+test('list is a subcommand, not a file to upload', () => {
+  const parsed = route(['list'])
+
+  assert.equal(parsed.command, 'list')
+  assert.deepEqual(parsed.args, [])
+})
+
+test('list takes --limit and --to', () => {
+  const parsed = route(['list', '--limit', '5', '--to', '@store'])
+
+  assert.equal(parsed.command, 'list')
+  assert.equal(parsed.options.limit, '5')
+  assert.equal(parsed.options.to, '@store')
+})

@@ -102,3 +102,20 @@ test(
     }
   },
 )
+
+test('list without a login gives a short error, not a stack trace', async () => {
+  // HOME points at an isolated temp directory so this never reads the real ~/.data-ark.
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'data-ark-list-bin-'))
+
+  try {
+    const { stdout, stderr } = await run(process.execPath, [BIN, 'list'], {
+      env: { ...process.env, HOME: home },
+    }).catch((err) => ({ stdout: err.stdout ?? '', stderr: err.stderr ?? '' }))
+
+    assert.match(stderr, /Not logged in/)
+    assert.doesNotMatch(stderr, /at .*\.js:\d+/)
+    assert.equal(stdout, '')
+  } finally {
+    await fs.rm(home, { recursive: true, force: true })
+  }
+})

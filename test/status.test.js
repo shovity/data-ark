@@ -1,34 +1,18 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { promises as fs } from 'node:fs'
-import os from 'node:os'
-import path from 'node:path'
 
 import { runStatus } from '../src/commands/status.js'
 import { loadConfig, saveConfig } from '../src/config.js'
 import { saveState } from '../src/state.js'
 
-async function tempDir() {
-  return await fs.mkdtemp(path.join(os.tmpdir(), 'data-ark-status-'))
-}
-
-function collect() {
-  const lines = []
-  return { lines, log: (line) => lines.push(line), text: () => lines.join('\n') }
-}
-
-const LOGGED_IN = {
-  session: 's',
-  apiId: 1,
-  apiHash: 'h',
-}
+import { LOGGED_IN, collect, tempDir } from './helpers.js'
 
 function fakeClient(me = { firstName: 'Sho', username: 'shovity' }) {
   return { async getMe() { return me } }
 }
 
 test('status without a login says so and never opens a connection', async () => {
-  const configDir = await tempDir()
+  const configDir = await tempDir('status')
   const out = collect()
   let connected = false
 
@@ -44,7 +28,7 @@ test('status without a login says so and never opens a connection', async () => 
 })
 
 test('status reports the account, the destination and nothing unfinished', async () => {
-  const configDir = await tempDir()
+  const configDir = await tempDir('status')
   await saveConfig({ ...LOGGED_IN, defaultChat: '@my_backups' }, configDir)
   const out = collect()
 
@@ -62,7 +46,7 @@ test('status reports the account, the destination and nothing unfinished', async
 })
 
 test('an expired session is reported, not thrown', async () => {
-  const configDir = await tempDir()
+  const configDir = await tempDir('status')
   await saveConfig(LOGGED_IN, configDir)
   const out = collect()
 
@@ -77,7 +61,7 @@ test('an expired session is reported, not thrown', async () => {
 })
 
 test('status lists each unfinished backup with how far it got', async () => {
-  const configDir = await tempDir()
+  const configDir = await tempDir('status')
   await saveConfig({ ...LOGGED_IN, defaultChat: '@my_backups' }, configDir)
   await saveState('aaa', {
     id: 'ark-20260905-02e053',
@@ -105,7 +89,7 @@ test('status lists each unfinished backup with how far it got', async () => {
 })
 
 test('the connection is closed even when getMe fails', async () => {
-  const configDir = await tempDir()
+  const configDir = await tempDir('status')
   await saveConfig(LOGGED_IN, configDir)
   const out = collect()
   let closed = false
@@ -122,7 +106,7 @@ test('the connection is closed even when getMe fails', async () => {
 })
 
 test('status --to sets the destination first, then reports it', async () => {
-  const configDir = await tempDir()
+  const configDir = await tempDir('status')
   await saveConfig({ ...LOGGED_IN, defaultChat: '@old' }, configDir)
   const out = collect()
 
@@ -139,7 +123,7 @@ test('status --to sets the destination first, then reports it', async () => {
 })
 
 test('status --to with an unusable destination writes nothing', async () => {
-  const configDir = await tempDir()
+  const configDir = await tempDir('status')
   await saveConfig({ ...LOGGED_IN, defaultChat: '@old' }, configDir)
 
   await assert.rejects(
@@ -156,7 +140,7 @@ test('status --to with an unusable destination writes nothing', async () => {
 })
 
 test('the destination is shown as a link that can be clicked', async () => {
-  const configDir = await tempDir()
+  const configDir = await tempDir('status')
   await saveConfig({ ...LOGGED_IN, defaultChat: '-5107543795' }, configDir)
   await saveState('aaa', {
     id: 'ark-1',
@@ -183,7 +167,7 @@ test('the destination is shown as a link that can be clicked', async () => {
 })
 
 test('Saved Messages is named rather than linked', async () => {
-  const configDir = await tempDir()
+  const configDir = await tempDir('status')
   await saveConfig({ ...LOGGED_IN, defaultChat: 'me' }, configDir)
   const out = collect()
 

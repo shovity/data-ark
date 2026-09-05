@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { route, HELP } from '../src/cli.js'
 import { runLogin } from '../src/commands/login.js'
+import { runList } from '../src/commands/list.js'
 import { runLogout } from '../src/commands/logout.js'
 import { runRestore } from '../src/commands/restore.js'
 import { runSetDestination } from '../src/commands/set-destination.js'
@@ -54,6 +55,10 @@ async function main() {
 
     case 'logout':
       await runLogout()
+      return
+
+    case 'list':
+      await runList(parsed.options)
       return
 
     case 'status':
