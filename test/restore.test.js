@@ -5,9 +5,10 @@ import { promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-import { runRestore } from '../src/commands/restore.js'
+import { runRestore, realDownloadChunk } from '../src/commands/restore.js'
 import { buildManifest, serializeManifest, manifestFileName } from '../src/manifest.js'
 import { saveConfig } from '../src/config.js'
+import { createProgress } from '../src/progress.js'
 
 function sha(buf) {
   return createHash('sha256').update(buf).digest('hex')
@@ -174,4 +175,68 @@ test('file đích đã tồn tại thì từ chối ghi đè trừ khi được 
 
   await runRestore(backup.id, { out }, { ...deps(fakeClient(backup), configDir), confirm: async () => true })
   assert.deepEqual(await fs.readFile(out), backup.content)
+})
+
+test('tên file trong manifest có path traversal thì vẫn ghi trong thư mục hiện tại', async () => {
+  const backup = fakeBackup({ name: '../../etc/evil.tar' })
+  const { dir, configDir } = await tempConfig()
+  const cwd = process.cwd()
+  process.chdir(dir)
+
+  try {
+    const result = await runRestore(backup.id, {}, deps(fakeClient(backup), configDir))
+    assert.equal(path.dirname(result.path), dir)
+    assert.equal(path.basename(result.path), 'evil.tar')
+    assert.deepEqual(await fs.readFile(result.path), backup.content)
+  } finally {
+    process.chdir(cwd)
+  }
+})
+
+test('tiến trình chunk cập nhật theo dữ liệu đã tải, không kẹt ở 0%', async () => {
+  const bytes = randomBytes(900)
+  const document = { size: bytes.length }
+  const message = { id: 1, media: { document } }
+
+  const client = {
+    iterDownload({ file }) {
+      assert.equal(file, document)
+      return (async function* () {
+        yield bytes.subarray(0, 300)
+        yield bytes.subarray(300, 600)
+        yield bytes.subarray(600, 900)
+      })()
+    },
+  }
+
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'data-ark-progress-'))
+  const handle = await fs.open(path.join(dir, 'out.bin'), 'w+')
+  await handle.truncate(900)
+
+  const lines = []
+  let tick = 0
+  const progress = createProgress({
+    total: 900,
+    label: 'Chunk 1/1',
+    write: (line) => lines.push(line),
+    now: () => (tick += 300),
+    minIntervalMs: 0,
+  })
+
+  try {
+    const result = await realDownloadChunk(client, message, handle, 0, progress.advance)
+    progress.finish()
+
+    assert.equal(result.size, 900)
+    assert.equal(result.sha256, sha(bytes))
+
+    const percents = lines.map((line) => Number(line.match(/(\d+)%/)[1]))
+    assert.ok(
+      percents.some((p) => p > 0 && p < 100),
+      `không có dòng nào cho thấy tiến trình giữa chừng (>0% và <100%): ${lines.join(' | ')}`,
+    )
+    assert.equal(percents.at(-1), 100, `dòng cuối phải là 100%: ${lines.join(' | ')}`)
+  } finally {
+    await handle.close()
+  }
 })

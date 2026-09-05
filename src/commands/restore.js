@@ -40,8 +40,8 @@ async function realGetMessage(client, peer, msgId) {
   return message ?? null
 }
 
-async function realDownloadChunk(client, message, handle, offset) {
-  return await downloadToFile(client, message, handle.fd, { offset })
+export async function realDownloadChunk(client, message, handle, offset, onProgress) {
+  return await downloadToFile(client, message, handle.fd, { offset, onProgress })
 }
 
 async function askConfirm(question) {
@@ -81,7 +81,10 @@ export async function runRestore(backupId, options = {}, deps = {}) {
     }
 
     const manifest = parseManifest(await readMessageBytes(client, manifestMessage))
-    const target = path.resolve(options.out ?? manifest.name)
+    // manifest.name đến từ dữ liệu tải về Telegram — không tin nó khi tự chọn
+    // đường dẫn: chỉ lấy basename để tránh path traversal kiểu "../../x".
+    // Khi người dùng tự chỉ định --out thì tôn trọng nguyên văn đường dẫn đó.
+    const target = path.resolve(options.out ?? path.basename(manifest.name))
     const partial = `${target}.partial`
 
     const exists = await fs.stat(target).then(() => true, () => false)
@@ -120,6 +123,7 @@ export async function runRestore(backupId, options = {}, deps = {}) {
           message,
           handle,
           chunk.i * manifest.chunkSize,
+          progress.advance,
         )
 
         progress.finish()
