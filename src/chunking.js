@@ -17,19 +17,19 @@ export function parseSize(input) {
   const match = text.match(/^(\d+(?:\.\d+)?)\s*(b|kb|mb|gb)?$/)
 
   if (!match) {
-    throw new Error(`Kích thước không hợp lệ: "${input}". Ví dụ hợp lệ: 1800MB, 1.8GB, 524288.`)
+    throw new Error(`Invalid size: "${input}". Valid examples: 1800MB, 1.8GB, 524288.`)
   }
 
   const bytes = Math.floor(Number(match[1]) * UNITS[match[2] ?? 'b'])
 
   if (bytes <= 0) {
-    throw new Error('Kích thước phải lớn hơn 0.')
+    throw new Error('Size must be greater than 0.')
   }
 
   if (bytes > MAX_CHUNK_SIZE) {
     throw new Error(
-      'Chunk tối đa là 1950MB. Telegram chỉ nhận 4000 phần 512KB cho mỗi file, ' +
-        'tức trần số học khoảng 1953MB, nên cần chừa biên an toàn.',
+      'Maximum chunk size is 1950MB. Telegram accepts only 4000 parts of 512KB per file, ' +
+        'an arithmetic ceiling of about 1953MB, so a safety margin is needed.',
     )
   }
 
@@ -38,7 +38,7 @@ export function parseSize(input) {
 
 export function planChunks(fileSize, chunkSize) {
   if (fileSize <= 0) {
-    throw new Error('File rỗng, không có gì để upload.')
+    throw new Error('File is empty, nothing to upload.')
   }
 
   const chunks = []

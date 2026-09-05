@@ -10,9 +10,9 @@ import { withRetry } from './retry.js'
 
 const read = promisify(readCallback)
 
-// Telegram tách hai API upload theo kích thước file: trên 10MB mới được dùng
-// nhóm "big". GramJS chọn đúng ngưỡng này (LARGE_FILE_THRESHOLD trong
-// node_modules/telegram/client/uploads.js), data-ark bám theo.
+// Telegram splits its upload API by file size: only files above 10MB may use the
+// "big" family. GramJS picks the same threshold (LARGE_FILE_THRESHOLD in
+// node_modules/telegram/client/uploads.js), and data-ark follows it.
 export const LARGE_FILE_THRESHOLD = 10 * 1024 * 1024
 
 async function readExactly(fd, length, position) {
@@ -22,7 +22,7 @@ async function readExactly(fd, length, position) {
   while (filled < length) {
     const { bytesRead } = await read(fd, buffer, filled, length - filled, position + filled)
     if (bytesRead === 0) {
-      throw new Error(`Đọc hụt: cần ${length} byte từ vị trí ${position} nhưng file đã hết.`)
+      throw new Error(`Short read: needed ${length} bytes at offset ${position} but the file ended.`)
     }
     filled += bytesRead
   }
@@ -45,7 +45,7 @@ export async function uploadRange(client, fd, options) {
 
   if (totalParts > MAX_PARTS) {
     throw new Error(
-      `Dải byte này cần ${totalParts} phần, trong khi Telegram chỉ nhận tối đa 4000 phần mỗi file.`,
+      `This byte range needs ${totalParts} parts, but Telegram accepts at most 4000 parts per file.`,
     )
   }
 
@@ -73,7 +73,7 @@ export async function uploadRange(client, fd, options) {
     let sendFailed = false
     let readError = null
 
-    // Đọc tuần tự để hash đúng thứ tự, gửi song song.
+    // Read sequentially so the hash sees parts in order, but send in parallel.
     try {
       for (let part = start; part < end; part += 1) {
         const partOffset = part * partSize
@@ -82,17 +82,18 @@ export async function uploadRange(client, fd, options) {
 
         hash.update(bytes)
 
-        // Gắn handler ngay lúc tạo promise, không đợi Promise.all ở cuối lô:
-        // nếu readExactly ném ở part sau, một promise đã push mà chưa ai bắt sẽ
-        // nổ thành unhandledRejection và che mất lỗi thật.
+        // Attach the handler when the promise is created rather than waiting for the
+        // Promise.all at the end of the batch: if readExactly throws on a later part,
+        // an already-pushed promise with no handler becomes an unhandledRejection and
+        // hides the real error.
         sending.push(
           withRetry(() => client.invoke(partRequest(part, bytes)), retryOptions).then(
             () => onProgress?.(partLength),
             (err) => {
-              // Không dùng `sendError ??= err`: nếu lý do reject là falsy
-              // (undefined/null), phép gán đó vẫn set sendError = err (falsy)
-              // rồi `if (sendError)` bên dưới coi như không có lỗi — nuốt mất
-              // một lần gửi thất bại và biến nó thành "thành công" giả.
+              // Not `sendError ??= err`: if the rejection reason is falsy
+              // (undefined/null), that assignment still sets sendError to a falsy
+              // value and the `if (sendError)` below reads as "no error" — swallowing
+              // a failed send and turning it into a fake success.
               if (!sendFailed) {
                 sendFailed = true
                 sendError = err
@@ -105,8 +106,8 @@ export async function uploadRange(client, fd, options) {
       readError = err
     }
 
-    // Mọi promise trong sending đều đã tự nuốt lỗi ở trên nên luôn resolve;
-    // await ở đây chỉ để chắc chắn không còn request nào đang bay khi ném lỗi.
+    // Every promise in `sending` already absorbed its own error above, so they all
+    // resolve; this await only guarantees no request is still in flight when we throw.
     await Promise.all(sending)
 
     if (readError) throw readError

@@ -25,7 +25,7 @@ import { createProgress, formatBytes, formatDuration } from '../progress.js'
 import { clearState, loadState, markChunkDone, saveState, stateDir, stateKey } from '../state.js'
 import { uploadRange } from '../uploader.js'
 
-// Trên ngưỡng này thì phải nói rõ đang chờ bao lâu, theo spec §8.
+// Above this threshold the wait must be spelled out, per spec §8.
 const LONG_WAIT_MS = 60_000
 
 async function realSendChunk(client, peer, { inputFile, fileName, caption }) {
@@ -65,12 +65,12 @@ export async function runUpload(filePath, options = {}, deps = {}) {
   try {
     stat = await fs.stat(absPath)
   } catch (err) {
-    if (err.code === 'ENOENT') throw new Error(`File không tồn tại: ${absPath}`)
+    if (err.code === 'ENOENT') throw new Error(`File does not exist: ${absPath}`)
     throw err
   }
 
   if (!stat.isFile()) {
-    throw new Error(`${absPath} không phải là file.`)
+    throw new Error(`${absPath} is not a file.`)
   }
 
   const config = await loadConfig(configDir)
@@ -80,9 +80,9 @@ export async function runUpload(filePath, options = {}, deps = {}) {
 
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > MAX_CONCURRENCY) {
     throw new Error(
-      `--concurrency không hợp lệ: "${options.concurrency}". ` +
-        `Phải là số nguyên từ 1 đến ${MAX_CONCURRENCY} — mỗi luồng giữ một phần 512KB trong RAM ` +
-        'và Telegram sẽ bắt chờ FLOOD_WAIT nếu bắn quá nhiều request cùng lúc.',
+      `Invalid --concurrency: "${options.concurrency}". ` +
+        `Must be an integer from 1 to ${MAX_CONCURRENCY} — each slot holds a 512KB part in RAM ` +
+        'and Telegram answers with FLOOD_WAIT if too many requests go out at once.',
     )
   }
 
@@ -95,9 +95,9 @@ export async function runUpload(filePath, options = {}, deps = {}) {
   if (resuming && state.chat !== String(chat)) {
     const stateFile = path.join(stateDir(configDir), `${key}.json`)
     throw new Error(
-      `Backup dở dang này đang gửi vào ${state.chat}, nhưng lệnh hiện tại chỉ định đích ${chat} — ` +
-        `không thể tách một backup ra hai đích khác nhau. Chạy lại không kèm --to để tiếp tục gửi vào ` +
-        `${state.chat}, hoặc xoá ${stateFile} rồi chạy lại để bắt đầu backup mới vào ${chat}.`,
+      `This unfinished backup is going to ${state.chat}, but the current command targets ${chat} — ` +
+        `a single backup cannot be split across two destinations. Run again without --to to keep ` +
+        `sending to ${state.chat}, or delete ${stateFile} and run again to start a new backup in ${chat}.`,
     )
   }
 
@@ -121,33 +121,33 @@ export async function runUpload(filePath, options = {}, deps = {}) {
   const log = silent ? () => {} : (line) => console.log(line)
   const warn = silent ? () => {} : writeErr
 
-  // Thử lại và FLOOD_WAIT phải nói ra: một FLOOD_WAIT_3600 mà im lặng thì người
-  // dùng chỉ thấy thanh tiến độ đứng hình cả tiếng và tưởng máy treo.
+  // Retries and FLOOD_WAIT must be announced: a silent FLOOD_WAIT_3600 leaves the user
+  // staring at a frozen progress bar for an hour, assuming the process has hung.
   function onRetry(err, attempt, delayMs) {
     if (delayMs > LONG_WAIT_MS) {
       warn(
-        `\nTelegram bắt chờ ${formatDuration(delayMs / 1000)} rồi mới cho gửi tiếp ` +
-          `(${err.message}). data-ark đang đợi và sẽ tự đi tiếp, đừng tắt.\n`,
+        `\nTelegram wants ${formatDuration(delayMs / 1000)} of waiting before the next send ` +
+          `(${err.message}). data-ark is waiting and will carry on by itself, leave it running.\n`,
       )
       return
     }
 
     warn(
-      `\nLỗi tạm thời (${err.message}), thử lại lần ${attempt} sau ` +
+      `\nTemporary error (${err.message}), retry ${attempt} in ` +
         `${formatDuration(delayMs / 1000)}.\n`,
     )
   }
 
   log(`Backup ${state.id}`)
-  log(`File   ${absPath} (${formatBytes(stat.size)}, ${chunks.length} chunk)`)
-  log(`Đích   ${chat}\n`)
+  log(`File   ${absPath} (${formatBytes(stat.size)}, ${chunks.length} chunks)`)
+  log(`To     ${chat}\n`)
 
   const client = await connect(config)
 
   try {
     for (const chunk of chunks) {
       if (state.done[String(chunk.i)]) {
-        log(`Chunk ${chunk.i + 1}/${chunks.length} đã có, bỏ qua.`)
+        log(`Chunk ${chunk.i + 1}/${chunks.length} already uploaded, skipping.`)
         continue
       }
 
@@ -193,17 +193,17 @@ export async function runUpload(filePath, options = {}, deps = {}) {
       }
     }
 
-    // File có thể bị ghi đè trong lúc upload — với file 50GB thì cả tiếng đồng
-    // hồ trôi qua giữa chunk đầu và chunk cuối. Khi đó manifest mô tả một file
-    // lai chưa từng tồn tại: restore vẫn khớp sha256 nhưng dữ liệu là rác.
+    // The file can be overwritten mid-upload — with a 50GB file an hour passes between
+    // the first and last chunk. The manifest would then describe a hybrid file that never
+    // existed: restore still matches every sha256, but the data is garbage.
     const after = await fs.stat(absPath)
 
     if (after.size !== stat.size || after.mtimeMs !== stat.mtimeMs) {
       throw new Error(
-        `${absPath} đã thay đổi trong lúc upload ` +
-          `(kích thước ${stat.size} → ${after.size}, mtime ${stat.mtimeMs} → ${after.mtimeMs}). ` +
-          'Backup này trộn dữ liệu cũ với dữ liệu mới nên không đáng tin — data-ark không gửi manifest. ' +
-          'Chờ file ổn định rồi chạy lại để tạo một backup mới.',
+        `${absPath} changed during the upload ` +
+          `(size ${stat.size} → ${after.size}, mtime ${stat.mtimeMs} → ${after.mtimeMs}). ` +
+          'This backup mixes old and new data and cannot be trusted — data-ark is not sending the manifest. ' +
+          'Wait until the file settles, then run again to create a new backup.',
       )
     }
 
@@ -223,15 +223,15 @@ export async function runUpload(filePath, options = {}, deps = {}) {
 
     await clearState(key, configDir)
 
-    log(`\nXong. Khôi phục bằng:\n  npx data-ark restore ${state.id}`)
+    log(`\nDone. Restore with:\n  npx data-ark restore ${state.id}`)
 
     return { id: state.id, chunks: chunks.length }
   } finally {
-    // Ngắt kết nối hỏng thì cũng không được nuốt mất lỗi thật đang bay lên.
+    // A failing disconnect must not swallow the real error already on its way up.
     try {
       await disconnect(client)
     } catch (err) {
-      warn(`\nCảnh báo: không đóng được kết nối Telegram: ${err.message}\n`)
+      warn(`\nWarning: could not close the Telegram connection: ${err.message}\n`)
     }
   }
 }

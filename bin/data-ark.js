@@ -7,20 +7,20 @@ import { runUpload } from '../src/commands/upload.js'
 
 const SIGINT_EXIT_CODE = 130
 
-// Lệnh đang chạy khi Ctrl-C xảy ra — mỗi lệnh có một sự thật khác nhau về việc
-// tiến độ có được lưu hay không, nên phải biết đang ở lệnh nào mới chọn đúng câu.
+// Which command is running when Ctrl-C arrives — each one tells a different truth
+// about whether progress was saved, so we need to know which to pick the right line.
 let currentCommand = null
 
 function sigintMessage(command) {
   if (command === 'upload') {
-    return '\nĐã dừng. Tiến độ đã lưu, chạy lại lệnh cũ để đi tiếp.\n'
+    return '\nStopped. Progress is saved, run the same command again to continue.\n'
   }
 
   if (command === 'restore') {
-    return '\nĐã dừng. Chưa lưu tiến độ tải, chạy lại sẽ tải lại từ đầu.\n'
+    return '\nStopped. Download progress is not saved, running again starts over.\n'
   }
 
-  return '\nĐã dừng.\n'
+  return '\nStopped.\n'
 }
 
 process.on('SIGINT', () => {
@@ -34,7 +34,7 @@ async function main() {
   try {
     parsed = route(process.argv.slice(2))
   } catch (err) {
-    process.stderr.write(`Lỗi: ${err.message}\n\n${HELP}`)
+    process.stderr.write(`Error: ${err.message}\n\n${HELP}`)
     process.exitCode = 2
     return
   }
@@ -60,24 +60,24 @@ async function main() {
 
     case 'restore':
       if (!parsed.args[0]) {
-        throw new Error('Thiếu backup id. Ví dụ: npx data-ark restore ark-20260905-7f3a91')
+        throw new Error('Missing backup id. Example: npx data-ark restore ark-20260905-7f3a91')
       }
       await runRestore(parsed.args[0], parsed.options)
       return
 
     default:
-      throw new Error(`Lệnh không nhận ra: ${parsed.command}`)
+      throw new Error(`Unknown command: ${parsed.command}`)
   }
 }
 
-// GramJS giữ lại các "exported sender" cùng một timer 30 giây để giải phóng
-// chúng, và client.disconnect()/destroy() không dọn nổi: cả hai map đó là Map
-// nhưng code duyệt bằng Object.values nên bỏ sót sạch. Hệ quả: lệnh in "Xong"
-// rồi vẫn treo thêm ~30 giây, và Ctrl-C trong khoảng đó lại báo sai rằng chưa
-// lưu được gì. Chạy xong việc là thoát hẳn, không nấn ná.
+// GramJS keeps "exported senders" around together with a 30-second timer to release
+// them, and neither client.disconnect() nor destroy() cleans them up: both of those
+// maps are Maps, but the code walks them with Object.values and so misses everything.
+// The result is a command that prints "Done" and then hangs for another ~30 seconds,
+// during which Ctrl-C falsely reports that nothing was saved. Finish the work, exit.
 function exitWhenFlushed(code) {
-  // Ghi rỗng chỉ để mượn callback: nó chạy sau khi mọi thứ xếp hàng trước đó đã
-  // xả xuống pipe, nên không mất chữ nào khi stdout/stderr không phải TTY.
+  // The empty writes exist only to borrow their callbacks: they fire after everything
+  // queued earlier has flushed, so nothing is lost when stdout/stderr is not a TTY.
   let pending = 2
 
   const done = () => {
@@ -85,7 +85,7 @@ function exitWhenFlushed(code) {
     if (pending === 0) process.exit(code)
   }
 
-  // Lưới an toàn: nếu callback không bao giờ tới (pipe đã đóng) thì vẫn thoát.
+  // Safety net: exit anyway if a callback never arrives (the pipe is already closed).
   setTimeout(() => process.exit(code), 2000).unref()
 
   process.stdout.write('', done)
@@ -97,7 +97,7 @@ main().then(
     exitWhenFlushed(process.exitCode ?? 0)
   },
   (err) => {
-    process.stderr.write(`Lỗi: ${err.message}\n`)
+    process.stderr.write(`Error: ${err.message}\n`)
     process.exitCode = 1
     exitWhenFlushed(1)
   },

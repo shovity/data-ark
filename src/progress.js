@@ -33,13 +33,13 @@ export function renderProgress({ done, total, elapsedMs, label, width = 24 }) {
   const bar = `${'█'.repeat(filled)}${'░'.repeat(width - filled)}`
 
   const bytesPerSecond = elapsedMs > 0 ? done / (elapsedMs / 1000) : 0
-  // Kẹp về 0: done có thể vượt total (đếm dư một nhịp) và ETA âm thì vô nghĩa.
+  // Clamp to 0: done can overshoot total (one extra tick) and a negative ETA is meaningless.
   const remaining = bytesPerSecond > 0 ? Math.max(0, (total - done) / bytesPerSecond) : Infinity
 
   const percent = String(Math.floor(ratio * 100)).padStart(3)
   const speed = `${formatBytes(Math.round(bytesPerSecond))}/s`
 
-  return `${label} ${bar} ${percent}% ${formatBytes(done)}/${formatBytes(total)} ${speed} còn ${formatDuration(remaining)}`
+  return `${label} ${bar} ${percent}% ${formatBytes(done)}/${formatBytes(total)} ${speed} ETA ${formatDuration(remaining)}`
 }
 
 export function createProgress({

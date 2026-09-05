@@ -16,11 +16,11 @@ function createPrompts() {
 }
 
 const LOGIN_ERROR_MESSAGES = {
-  PHONE_NUMBER_INVALID: 'số điện thoại không hợp lệ',
-  PHONE_CODE_INVALID: 'mã xác nhận sai',
-  PHONE_CODE_EXPIRED: 'mã xác nhận đã hết hạn',
-  PASSWORD_HASH_INVALID: 'mật khẩu hai lớp sai',
-  FLOOD_WAIT: 'bị Telegram giới hạn tần suất, cần chờ',
+  PHONE_NUMBER_INVALID: 'invalid phone number',
+  PHONE_CODE_INVALID: 'wrong verification code',
+  PHONE_CODE_EXPIRED: 'verification code expired',
+  PASSWORD_HASH_INVALID: 'wrong two-step password',
+  FLOOD_WAIT: 'rate limited by Telegram, need to wait',
 }
 
 export function describeLoginError(err) {
@@ -36,30 +36,30 @@ export function describeLoginError(err) {
 export async function runLogin({ configDir = defaultConfigDir(), prompts = createPrompts() } = {}) {
   const config = await loadConfig(configDir)
 
-  console.log('Cần api_id và api_hash của riêng bạn. Lấy tại https://my.telegram.org → API development tools.\n')
+  console.log('You need your own api_id and api_hash. Get them at https://my.telegram.org → API development tools.\n')
 
   const apiIdAnswer = (await prompts.ask(`api_id${config.apiId ? ` [${config.apiId}]` : ''}: `)).trim()
 
   if (apiIdAnswer !== '' && !/^\d+$/.test(apiIdAnswer)) {
     prompts.close()
-    throw new Error('api_id phải là số nguyên.')
+    throw new Error('api_id must be an integer.')
   }
 
   const apiId = apiIdAnswer === '' ? config.apiId : Number(apiIdAnswer)
-  const apiHash = (await prompts.ask(`api_hash${config.apiHash ? ' [giữ nguyên]' : ''}: `)) || config.apiHash
+  const apiHash = (await prompts.ask(`api_hash${config.apiHash ? ' [keep current]' : ''}: `)) || config.apiHash
 
   if (!apiId || !apiHash) {
     prompts.close()
-    throw new Error('Thiếu api_id hoặc api_hash.')
+    throw new Error('Missing api_id or api_hash.')
   }
 
   const client = new TelegramClient(new StringSession(''), apiId, apiHash, { connectionRetries: 5 })
 
   await client.start({
-    phoneNumber: () => prompts.ask('Số điện thoại (dạng +84...): '),
-    phoneCode: () => prompts.ask('Mã xác nhận Telegram vừa gửi: '),
-    password: () => prompts.ask('Mật khẩu hai lớp (bỏ trống nếu không bật): '),
-    onError: (err) => console.error(`Lỗi đăng nhập: ${describeLoginError(err)}`),
+    phoneNumber: () => prompts.ask('Phone number (e.g. +1...): '),
+    phoneCode: () => prompts.ask('Verification code Telegram just sent: '),
+    password: () => prompts.ask('Two-step password (leave blank if not enabled): '),
+    onError: (err) => console.error(`Login failed: ${describeLoginError(err)}`),
   })
 
   const me = await client.getMe()
@@ -68,7 +68,7 @@ export async function runLogin({ configDir = defaultConfigDir(), prompts = creat
 
   const chatAnswer = (
     await prompts.ask(
-      `Đẩy backup vào chat nào? (@username, -100..., hoặc me)${config.defaultChat ? ` [${config.defaultChat}]` : ''}, Enter để bỏ qua: `,
+      `Which chat should backups go to? (@username, -100..., or me)${config.defaultChat ? ` [${config.defaultChat}]` : ''}, Enter to skip: `,
     )
   ).trim()
 
@@ -82,6 +82,6 @@ export async function runLogin({ configDir = defaultConfigDir(), prompts = creat
 
   await saveConfig(next, configDir)
 
-  console.log(`\nĐã đăng nhập với tài khoản ${me.username ? `@${me.username}` : me.firstName}.`)
-  console.log(`Cấu hình đã lưu vào ${configDir}/config.json`)
+  console.log(`\nLogged in as ${me.username ? `@${me.username}` : me.firstName}.`)
+  console.log(`Config saved to ${configDir}/config.json`)
 }

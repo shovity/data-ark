@@ -10,8 +10,8 @@ import { parseManifest } from '../src/manifest.js'
 import { loadState, stateKey } from '../src/state.js'
 
 /**
- * Client giả gom mọi part theo fileId, và khi sendFile được gọi thì
- * "chốt" nội dung đã upload lại thành một message có id tăng dần.
+ * Fake client that collects every part by fileId and, when sendFile is called,
+ * "seals" the uploaded content into a message with an increasing id.
  */
 function fakeClient({ failOnChunk = null } = {}) {
   const parts = new Map()
@@ -31,7 +31,7 @@ function fakeClient({ failOnChunk = null } = {}) {
       const chunkIndex = messages.filter((m) => !m.fileName.endsWith('.manifest.json')).length
 
       if (failOnChunk !== null && chunkIndex === failOnChunk) {
-        throw new Error('mạng đứt giữa chừng')
+        throw new Error('connection dropped mid-transfer')
       }
 
       const collected = parts.get(file.id?.toString()) ?? []
@@ -71,13 +71,13 @@ function deps(client) {
   }
 }
 
-test('cắt file thành đúng số chunk và upload hết', async () => {
+test('splits the file into the right number of chunks and uploads them all', async () => {
   const ws = await tempWorkspace(1000)
   const client = fakeClient()
 
   const result = await runUpload(
     ws.filePath,
-    { to: '@kho', 'chunk-size': '400', concurrency: '2' },
+    { to: '@store', 'chunk-size': '400', concurrency: '2' },
     { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
   )
 
@@ -89,13 +89,13 @@ test('cắt file thành đúng số chunk và upload hết', async () => {
   assert.deepEqual(Buffer.concat(chunkMessages.map((m) => m.bytes)), ws.content)
 })
 
-test('chunk được đặt tên và gắn caption theo backup id', async () => {
+test('chunks are named and captioned after the backup id', async () => {
   const ws = await tempWorkspace(1000)
   const client = fakeClient()
 
   const result = await runUpload(
     ws.filePath,
-    { to: '@kho', 'chunk-size': '400' },
+    { to: '@store', 'chunk-size': '400' },
     { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
   )
 
@@ -104,13 +104,13 @@ test('chunk được đặt tên và gắn caption theo backup id', async () => 
   assert.match(first.caption, new RegExp(`#dataark ${result.id} 1/3`))
 })
 
-test('manifest được gửi cuối cùng và mô tả đúng các chunk', async () => {
+test('the manifest is sent last and describes the chunks correctly', async () => {
   const ws = await tempWorkspace(1000)
   const client = fakeClient()
 
   const result = await runUpload(
     ws.filePath,
-    { to: '@kho', 'chunk-size': '400' },
+    { to: '@store', 'chunk-size': '400' },
     { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
   )
 
@@ -131,21 +131,21 @@ test('manifest được gửi cuối cùng và mô tả đúng các chunk', asyn
   )
 })
 
-test('--to được ghi nhớ làm đích mặc định', async () => {
+test('--to is remembered as the default destination', async () => {
   const ws = await tempWorkspace(400)
   const client = fakeClient()
 
   await runUpload(
     ws.filePath,
-    { to: '@kho_moi', 'chunk-size': '400' },
+    { to: '@new_store', 'chunk-size': '400' },
     { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
   )
 
   const config = JSON.parse(await fs.readFile(path.join(ws.configDir, 'config.json'), 'utf8'))
-  assert.equal(config.defaultChat, '@kho_moi')
+  assert.equal(config.defaultChat, '@new_store')
 })
 
-test('không có --to và chưa từng có đích thì báo lỗi hướng dẫn', async () => {
+test('no --to and no destination ever set gives a directive error', async () => {
   const ws = await tempWorkspace(400)
   const client = fakeClient()
 
@@ -156,50 +156,50 @@ test('không có --to và chưa từng có đích thì báo lỗi hướng dẫn
   )
 })
 
-test('file không tồn tại thì báo lỗi rõ ràng', async () => {
+test('a nonexistent file gives a clear error', async () => {
   const ws = await tempWorkspace(400)
   const client = fakeClient()
 
   await assert.rejects(
     () =>
-      runUpload(path.join(ws.dir, 'khong-co.tar'), { to: '@kho' }, {
+      runUpload(path.join(ws.dir, 'no-such-file.tar'), { to: '@store' }, {
         ...deps(client),
         configDir: ws.configDir,
         silent: true,
       }),
-    /không tồn tại/,
+    /does not exist/,
   )
 })
 
-test('state còn lại sau khi đứt giữa chừng', async () => {
+test('the state survives a mid-transfer failure', async () => {
   const ws = await tempWorkspace(1000)
   const client = fakeClient({ failOnChunk: 1 })
 
   await assert.rejects(
     () =>
-      runUpload(ws.filePath, { to: '@kho', 'chunk-size': '400' }, {
+      runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
         ...deps(client),
         configDir: ws.configDir,
         partSize: 128,
         silent: true,
       }),
-    /mạng đứt/,
+    /connection dropped/,
   )
 
   const stat = await fs.stat(ws.filePath)
   const key = stateKey(path.resolve(ws.filePath), stat.size, stat.mtimeMs)
   const state = await loadState(key, ws.configDir)
 
-  assert.ok(state, 'state phải còn để lần sau resume')
+  assert.ok(state, 'the state must survive so the next run can resume')
   assert.deepEqual(Object.keys(state.done), ['0'])
 })
 
-test('chạy lại sau khi đứt thì bỏ qua chunk đã xong và giữ nguyên backup id', async () => {
+test('rerunning after a failure skips finished chunks and keeps the backup id', async () => {
   const ws = await tempWorkspace(1000)
 
   const failing = fakeClient({ failOnChunk: 1 })
   await assert.rejects(() =>
-    runUpload(ws.filePath, { to: '@kho', 'chunk-size': '400' }, {
+    runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
       ...deps(failing),
       configDir: ws.configDir,
       partSize: 128,
@@ -208,30 +208,30 @@ test('chạy lại sau khi đứt thì bỏ qua chunk đã xong và giữ nguyê
   )
   const stat = await fs.stat(ws.filePath)
   const key = stateKey(path.resolve(ws.filePath), stat.size, stat.mtimeMs)
-  const idLanDau = (await loadState(key, ws.configDir)).id
+  const firstRunId = (await loadState(key, ws.configDir)).id
 
   const retry = fakeClient()
-  const result = await runUpload(ws.filePath, { to: '@kho', 'chunk-size': '400' }, {
+  const result = await runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
     ...deps(retry),
     configDir: ws.configDir,
     partSize: 128,
     silent: true,
   })
 
-  assert.equal(result.id, idLanDau)
+  assert.equal(result.id, firstRunId)
 
   const chunkMessages = retry.messages.filter((m) => !m.fileName.endsWith('.manifest.json'))
-  assert.equal(chunkMessages.length, 2, 'chỉ upload lại 2 chunk còn thiếu')
+  assert.equal(chunkMessages.length, 2, 'only the 2 missing chunks are re-uploaded')
 
   const manifest = parseManifest(retry.messages.at(-1).bytes)
-  assert.equal(manifest.chunks.length, 3, 'manifest vẫn mô tả đủ 3 chunk')
+  assert.equal(manifest.chunks.length, 3, 'the manifest still describes all 3 chunks')
 })
 
-test('upload xong thì xoá state', async () => {
+test('a finished upload clears the state', async () => {
   const ws = await tempWorkspace(1000)
   const client = fakeClient()
 
-  await runUpload(ws.filePath, { to: '@kho', 'chunk-size': '400' }, {
+  await runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
     ...deps(client),
     configDir: ws.configDir,
     partSize: 128,
@@ -243,7 +243,7 @@ test('upload xong thì xoá state', async () => {
   assert.equal(await loadState(key, ws.configDir), null)
 })
 
-test('--concurrency không phải số thì báo lỗi rõ ràng', async () => {
+test('a non-numeric --concurrency gives a clear error', async () => {
   const ws = await tempWorkspace(1000)
   const client = fakeClient()
 
@@ -251,14 +251,14 @@ test('--concurrency không phải số thì báo lỗi rõ ràng', async () => {
     () =>
       runUpload(
         ws.filePath,
-        { to: '@kho', 'chunk-size': '400', concurrency: 'abc' },
+        { to: '@store', 'chunk-size': '400', concurrency: 'abc' },
         { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
       ),
     /--concurrency/,
   )
 })
 
-test('--concurrency bằng 0 thì báo lỗi rõ ràng thay vì treo vô hạn', async () => {
+test('--concurrency of 0 gives a clear error instead of hanging forever', async () => {
   const ws = await tempWorkspace(1000)
   const client = fakeClient()
 
@@ -266,19 +266,19 @@ test('--concurrency bằng 0 thì báo lỗi rõ ràng thay vì treo vô hạn',
     () =>
       runUpload(
         ws.filePath,
-        { to: '@kho', 'chunk-size': '400', concurrency: '0' },
+        { to: '@store', 'chunk-size': '400', concurrency: '0' },
         { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
       ),
     /--concurrency/,
   )
 })
 
-test('resume với --to khác đích cũ thì bị chặn, không tách backup ra hai đích', async () => {
+test('resuming with a different --to is blocked, no backup split across two destinations', async () => {
   const ws = await tempWorkspace(1000)
 
   const failing = fakeClient({ failOnChunk: 1 })
   await assert.rejects(() =>
-    runUpload(ws.filePath, { to: '@kho', 'chunk-size': '400' }, {
+    runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
       ...deps(failing),
       configDir: ws.configDir,
       partSize: 128,
@@ -289,32 +289,32 @@ test('resume với --to khác đích cũ thì bị chặn, không tách backup r
   const retry = fakeClient()
   await assert.rejects(
     () =>
-      runUpload(ws.filePath, { to: '@kho_khac', 'chunk-size': '400' }, {
+      runUpload(ws.filePath, { to: '@other_store', 'chunk-size': '400' }, {
         ...deps(retry),
         configDir: ws.configDir,
         partSize: 128,
         silent: true,
       }),
     (err) => {
-      assert.match(err.message, /@kho_khac/)
+      assert.match(err.message, /@other_store/)
       assert.match(err.message, /--to/)
       assert.match(err.message, /\.json/)
       return true
     },
   )
 
-  assert.equal(retry.messages.length, 0, 'không được gửi bất cứ gì khi bị chặn')
+  assert.equal(retry.messages.length, 0, 'nothing may be sent once the run is blocked')
 
   const config = JSON.parse(await fs.readFile(path.join(ws.configDir, 'config.json'), 'utf8'))
-  assert.equal(config.defaultChat, '@kho', 'không được ghi đè đích mặc định khi bị chặn')
+  assert.equal(config.defaultChat, '@store', 'the default destination must not be overwritten when blocked')
 })
 
-test('resume với --chunk-size khác thì bắt đầu backup mới, không giữ done cũ', async () => {
+test('resuming with a different --chunk-size starts a new backup and drops the old done set', async () => {
   const ws = await tempWorkspace(1000)
 
   const failing = fakeClient({ failOnChunk: 1 })
   await assert.rejects(() =>
-    runUpload(ws.filePath, { to: '@kho', 'chunk-size': '400' }, {
+    runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
       ...deps(failing),
       configDir: ws.configDir,
       partSize: 128,
@@ -324,39 +324,39 @@ test('resume với --chunk-size khác thì bắt đầu backup mới, không gi�
 
   const stat = await fs.stat(ws.filePath)
   const key = stateKey(path.resolve(ws.filePath), stat.size, stat.mtimeMs)
-  const idLanDau = (await loadState(key, ws.configDir)).id
+  const firstRunId = (await loadState(key, ws.configDir)).id
 
   const retry = fakeClient()
-  const result = await runUpload(ws.filePath, { to: '@kho', 'chunk-size': '250' }, {
+  const result = await runUpload(ws.filePath, { to: '@store', 'chunk-size': '250' }, {
     ...deps(retry),
     configDir: ws.configDir,
     partSize: 128,
     silent: true,
   })
 
-  assert.notEqual(result.id, idLanDau, 'phải là backup id mới')
+  assert.notEqual(result.id, firstRunId, 'it must be a new backup id')
   assert.equal(result.chunks, 4)
 
   const chunkMessages = retry.messages.filter((m) => !m.fileName.endsWith('.manifest.json'))
-  assert.equal(chunkMessages.length, 4, 'phải upload lại từ đầu, không giữ chunk done cũ')
+  assert.equal(chunkMessages.length, 4, 'everything is re-uploaded, no old done chunks are kept')
 })
 
-test('file bị đổi trong lúc upload thì không gửi manifest, báo lỗi rõ ràng', async () => {
+test('a file changed during the upload sends no manifest and gives a clear error', async () => {
   const ws = await tempWorkspace(1000)
   const client = fakeClient()
 
   const stat = await fs.stat(ws.filePath)
   const key = stateKey(path.resolve(ws.filePath), stat.size, stat.mtimeMs)
 
-  // Sau chunk đầu tiên, một tiến trình khác ghi đè file — đúng cảnh một VM image
-  // hay dump database vẫn đang được viết trong lúc data-ark đọc nó.
-  let daDoi = false
-  const doiFileSauChunkDau = {
+  // After the first chunk another process overwrites the file — exactly the case of a
+  // VM image or database dump still being written while data-ark reads it.
+  let alreadyChanged = false
+  const changeFileAfterFirstChunk = {
     ...deps(client),
     sendChunk: async (c, peer, args) => {
       const message = await deps(client).sendChunk(c, peer, args)
-      if (!daDoi) {
-        daDoi = true
+      if (!alreadyChanged) {
+        alreadyChanged = true
         await fs.appendFile(ws.filePath, randomBytes(100))
       }
       return message
@@ -367,11 +367,11 @@ test('file bị đổi trong lúc upload thì không gửi manifest, báo lỗi 
   }
 
   await assert.rejects(
-    () => runUpload(ws.filePath, { to: '@kho', 'chunk-size': '400' }, doiFileSauChunkDau),
+    () => runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, changeFileAfterFirstChunk),
     (err) => {
-      assert.match(err.message, /đã thay đổi trong lúc upload/)
-      assert.match(err.message, /không đáng tin/)
-      assert.match(err.message, /chạy lại/i)
+      assert.match(err.message, /changed during the upload/)
+      assert.match(err.message, /cannot be trusted/)
+      assert.match(err.message, /run again/i)
       return true
     },
   )
@@ -379,19 +379,20 @@ test('file bị đổi trong lúc upload thì không gửi manifest, báo lỗi 
   assert.equal(
     client.messages.filter((m) => m.fileName.endsWith('.manifest.json')).length,
     0,
-    'không được gửi manifest cho một backup lai',
+    'no manifest may be sent for a hybrid backup',
   )
 
-  // State của lần chạy cũ vẫn còn; lần chạy sau có key khác vì mtime đã đổi, nên
-  // tự động là một backup mới chứ không resume nhầm vào dữ liệu cũ.
-  assert.ok(await loadState(key, ws.configDir), 'state cũ vẫn được giữ')
+  // The old run's state is still there; the next run gets a different key because the
+  // mtime changed, so it automatically becomes a new backup rather than resuming into
+  // stale data.
+  assert.ok(await loadState(key, ws.configDir), 'the old state is kept')
 
-  const statMoi = await fs.stat(ws.filePath)
-  const keyMoi = stateKey(path.resolve(ws.filePath), statMoi.size, statMoi.mtimeMs)
-  assert.notEqual(keyMoi, key, 'file đổi thì key đổi, lần sau là backup mới')
+  const newStat = await fs.stat(ws.filePath)
+  const newKey = stateKey(path.resolve(ws.filePath), newStat.size, newStat.mtimeMs)
+  assert.notEqual(newKey, key, 'a changed file changes the key, so next time is a new backup')
 })
 
-test('--concurrency quá lớn bị chặn thay vì ôm hàng GB buffer', async () => {
+test('an oversized --concurrency is blocked instead of holding gigabytes of buffers', async () => {
   const ws = await tempWorkspace(1000)
   const client = fakeClient()
 
@@ -399,12 +400,12 @@ test('--concurrency quá lớn bị chặn thay vì ôm hàng GB buffer', async 
     () =>
       runUpload(
         ws.filePath,
-        { to: '@kho', 'chunk-size': '400', concurrency: '4000' },
+        { to: '@store', 'chunk-size': '400', concurrency: '4000' },
         { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
       ),
     (err) => {
       assert.match(err.message, /--concurrency/)
-      assert.match(err.message, /1 đến 64/)
+      assert.match(err.message, /1 to 64/)
       return true
     },
   )
@@ -412,42 +413,42 @@ test('--concurrency quá lớn bị chặn thay vì ôm hàng GB buffer', async 
   assert.equal(client.messages.length, 0)
 })
 
-test('--concurrency đúng 64 vẫn chạy được', async () => {
+test('--concurrency of exactly 64 still runs', async () => {
   const ws = await tempWorkspace(1000)
   const client = fakeClient()
 
   const result = await runUpload(
     ws.filePath,
-    { to: '@kho', 'chunk-size': '400', concurrency: '64' },
+    { to: '@store', 'chunk-size': '400', concurrency: '64' },
     { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
   )
 
   assert.equal(result.chunks, 3)
 })
 
-test('FLOOD_WAIT dài được nói ra rõ ràng chứ không treo câm', async () => {
+test('a long FLOOD_WAIT is announced clearly instead of hanging in silence', async () => {
   const ws = await tempWorkspace(400)
   const client = fakeClient()
 
-  // Part đầu tiên dính FLOOD_WAIT_3600 một lần rồi mới trót lọt.
-  let daFlood = false
-  const invokeGoc = client.invoke.bind(client)
+  // The first part hits FLOOD_WAIT_3600 once and then goes through.
+  let alreadyFlooded = false
+  const originalInvoke = client.invoke.bind(client)
   client.invoke = async (request) => {
-    if (!daFlood && request.filePart === 0) {
-      daFlood = true
+    if (!alreadyFlooded && request.filePart === 0) {
+      alreadyFlooded = true
       const err = new Error('FLOOD_WAIT_3600')
       err.seconds = 3600
       err.errorMessage = 'FLOOD_WAIT_3600'
       throw err
     }
-    return await invokeGoc(request)
+    return await originalInvoke(request)
   }
 
   const lines = []
 
   await runUpload(
     ws.filePath,
-    { to: '@kho', 'chunk-size': '400' },
+    { to: '@store', 'chunk-size': '400' },
     {
       ...deps(client),
       configDir: ws.configDir,
@@ -459,30 +460,30 @@ test('FLOOD_WAIT dài được nói ra rõ ràng chứ không treo câm', async 
   )
 
   const output = lines.join('')
-  assert.match(output, /Telegram bắt chờ 1h0m/)
+  assert.match(output, /Telegram wants 1h0m/)
   assert.match(output, /FLOOD_WAIT_3600/)
-  assert.match(output, /đừng tắt/)
+  assert.match(output, /leave it running/)
 })
 
-test('lỗi tạm thời ngắn cũng được báo, kèm số lần thử', async () => {
+test('a short temporary error is announced too, with the attempt number', async () => {
   const ws = await tempWorkspace(400)
   const client = fakeClient()
 
-  let daLoi = false
-  const invokeGoc = client.invoke.bind(client)
+  let alreadyFailed = false
+  const originalInvoke = client.invoke.bind(client)
   client.invoke = async (request) => {
-    if (!daLoi && request.filePart === 0) {
-      daLoi = true
-      throw new Error('mạng chập chờn')
+    if (!alreadyFailed && request.filePart === 0) {
+      alreadyFailed = true
+      throw new Error('flaky network')
     }
-    return await invokeGoc(request)
+    return await originalInvoke(request)
   }
 
   const lines = []
 
   await runUpload(
     ws.filePath,
-    { to: '@kho', 'chunk-size': '400' },
+    { to: '@store', 'chunk-size': '400' },
     {
       ...deps(client),
       configDir: ws.configDir,
@@ -494,32 +495,32 @@ test('lỗi tạm thời ngắn cũng được báo, kèm số lần thử', asy
   )
 
   const output = lines.join('')
-  assert.match(output, /Lỗi tạm thời \(mạng chập chờn\), thử lại lần 1 sau 1s/)
-  assert.doesNotMatch(output, /Telegram bắt chờ/)
+  assert.match(output, /Temporary error \(flaky network\), retry 1 in 1s/)
+  assert.doesNotMatch(output, /Telegram wants/)
 })
 
-test('silent thì không in gì ra stderr, kể cả khi có FLOOD_WAIT', async () => {
+test('silent prints nothing to stderr, even on a FLOOD_WAIT', async () => {
   const ws = await tempWorkspace(400)
   const client = fakeClient()
 
-  let daFlood = false
-  const invokeGoc = client.invoke.bind(client)
+  let alreadyFlooded = false
+  const originalInvoke = client.invoke.bind(client)
   client.invoke = async (request) => {
-    if (!daFlood && request.filePart === 0) {
-      daFlood = true
+    if (!alreadyFlooded && request.filePart === 0) {
+      alreadyFlooded = true
       const err = new Error('FLOOD_WAIT_3600')
       err.seconds = 3600
       err.errorMessage = 'FLOOD_WAIT_3600'
       throw err
     }
-    return await invokeGoc(request)
+    return await originalInvoke(request)
   }
 
   const lines = []
 
   await runUpload(
     ws.filePath,
-    { to: '@kho', 'chunk-size': '400' },
+    { to: '@store', 'chunk-size': '400' },
     {
       ...deps(client),
       configDir: ws.configDir,

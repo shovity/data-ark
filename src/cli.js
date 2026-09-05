@@ -10,20 +10,20 @@ const OPTIONS = {
   help: { type: 'boolean', short: 'h' },
 }
 
-export const HELP = `data-ark — cắt file lớn thành chunk và lưu trữ trên Telegram
+export const HELP = `data-ark — split large files into chunks and store them on Telegram
 
-Cách dùng:
-  npx data-ark login                        Đăng nhập Telegram, chỉ cần chạy một lần
-  npx data-ark <file>                       Cắt file và đẩy lên Telegram
-  npx data-ark restore <backup-id>          Tải về và ghép lại file gốc
-  npx data-ark logout                       Xoá phiên đăng nhập đã lưu
+Usage:
+  npx data-ark login                        Log in to Telegram, only needed once
+  npx data-ark <file>                       Split a file and upload it to Telegram
+  npx data-ark restore <backup-id>          Download the chunks and reassemble the file
+  npx data-ark logout                       Remove the saved session
 
-Tuỳ chọn:
-  --to <chat>            Đích lưu: @username, -100123..., hoặc me. Được ghi nhớ cho lần sau.
-  --chunk-size <n>       Kích thước mỗi chunk, mặc định 1800MB. Ví dụ: 1.8GB, 500MB.
-  --concurrency <n>      Số phần 512KB gửi song song, mặc định 8, tối đa 64.
-  --out <đường-dẫn>      Nơi ghi file khi restore. Mặc định lấy basename của tên trong manifest.
-  -h, --help             Hiện trợ giúp này.
+Options:
+  --to <chat>            Destination: @username, -100123..., or me. Remembered for next time.
+  --chunk-size <n>       Size of each chunk, default 1800MB. Examples: 1.8GB, 500MB.
+  --concurrency <n>      512KB parts sent in parallel, default 8, max 64.
+  --out <path>           Where to write the restored file. Defaults to the basename in the manifest.
+  -h, --help             Show this help.
 `
 
 export function route(argv) {

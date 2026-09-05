@@ -5,7 +5,7 @@ import { Api, TelegramClient } from 'telegram'
 import { StringSession } from 'telegram/sessions/index.js'
 import { readBigIntFromBuffer } from 'telegram/Helpers.js'
 
-test('import được các thành phần GramJS cần dùng', () => {
+test('the GramJS pieces we depend on can be imported', () => {
   assert.equal(typeof TelegramClient, 'function')
   assert.equal(typeof StringSession, 'function')
   assert.equal(typeof readBigIntFromBuffer, 'function')

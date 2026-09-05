@@ -3,47 +3,47 @@ import assert from 'node:assert/strict'
 
 import { normalizeChatTarget, requireChat, assertLoggedIn } from '../src/client.js'
 
-test('me giữ nguyên', () => {
+test('me is left untouched', () => {
   assert.equal(normalizeChatTarget('me'), 'me')
 })
 
-test('username giữ nguyên dạng chuỗi', () => {
-  assert.equal(normalizeChatTarget('@kho_backup'), '@kho_backup')
+test('a username stays a string', () => {
+  assert.equal(normalizeChatTarget('@my_backups'), '@my_backups')
 })
 
-test('id kênh chuyển thành số', () => {
+test('a channel id becomes a number', () => {
   assert.equal(normalizeChatTarget('-1001234567890'), -1001234567890)
   assert.equal(normalizeChatTarget('123456'), 123456)
 })
 
-test('khoảng trắng thừa bị cắt', () => {
-  assert.equal(normalizeChatTarget('  @kho  '), '@kho')
+test('surrounding whitespace is trimmed', () => {
+  assert.equal(normalizeChatTarget('  @store  '), '@store')
 })
 
-test('chuỗi rỗng bị từ chối', () => {
-  assert.throws(() => normalizeChatTarget('   '), /rỗng/)
+test('an empty string is rejected', () => {
+  assert.throws(() => normalizeChatTarget('   '), /must not be empty/)
 })
 
-test('requireChat ưu tiên --to hơn cấu hình', () => {
-  assert.equal(requireChat({ to: '@moi' }, { defaultChat: '@cu' }), '@moi')
+test('requireChat prefers --to over the config', () => {
+  assert.equal(requireChat({ to: '@new' }, { defaultChat: '@old' }), '@new')
 })
 
-test('requireChat dùng đích đã ghi nhớ khi không có --to', () => {
-  assert.equal(requireChat({}, { defaultChat: '@cu' }), '@cu')
+test('requireChat uses the remembered destination when --to is absent', () => {
+  assert.equal(requireChat({}, { defaultChat: '@old' }), '@old')
 })
 
-test('requireChat hướng dẫn khi chưa từng có đích nào', () => {
+test('requireChat gives directions when no destination was ever set', () => {
   assert.throws(() => requireChat({}, {}), /--to/)
 })
 
-test('assertLoggedIn ném lỗi khi cấu hình rỗng', () => {
-  assert.throws(() => assertLoggedIn({}), /Chưa đăng nhập/)
+test('assertLoggedIn throws on an empty config', () => {
+  assert.throws(() => assertLoggedIn({}), /Not logged in/)
 })
 
-test('assertLoggedIn ném lỗi khi thiếu apiHash', () => {
-  assert.throws(() => assertLoggedIn({ session: 's', apiId: 1 }), /Chưa đăng nhập/)
+test('assertLoggedIn throws when apiHash is missing', () => {
+  assert.throws(() => assertLoggedIn({ session: 's', apiId: 1 }), /Not logged in/)
 })
 
-test('assertLoggedIn không ném lỗi khi cấu hình đủ', () => {
+test('assertLoggedIn does not throw on a complete config', () => {
   assert.doesNotThrow(() => assertLoggedIn({ session: 's', apiId: 1, apiHash: 'h' }))
 })

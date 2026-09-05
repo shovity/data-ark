@@ -5,7 +5,7 @@ export function normalizeChatTarget(input) {
   const text = String(input).trim()
 
   if (text === '') {
-    throw new Error('Đích lưu không được để rỗng.')
+    throw new Error('Destination must not be empty.')
   }
 
   if (/^-?\d+$/.test(text)) {
@@ -20,8 +20,8 @@ export function requireChat(options, config) {
 
   if (!raw) {
     throw new Error(
-      'Chưa có đích lưu — chạy lại với --to @kho_backup (hoặc --to me để dùng Saved Messages). ' +
-        'Lần sau data-ark sẽ tự nhớ.',
+      'No destination set — run again with --to @my_backups (or --to me for Saved Messages). ' +
+        'data-ark will remember it next time.',
     )
   }
 
@@ -30,7 +30,7 @@ export function requireChat(options, config) {
 
 export function assertLoggedIn(config) {
   if (!config.session || !config.apiId || !config.apiHash) {
-    throw new Error('Chưa đăng nhập — chạy "npx data-ark login" trước.')
+    throw new Error('Not logged in — run "npx data-ark login" first.')
   }
 }
 
@@ -45,7 +45,7 @@ export async function connect(config) {
   await client.connect()
 
   if (!(await client.isUserAuthorized())) {
-    throw new Error('Phiên đăng nhập đã hết hạn — chạy "npx data-ark login".')
+    throw new Error('Session expired — run "npx data-ark login".')
   }
 
   return client

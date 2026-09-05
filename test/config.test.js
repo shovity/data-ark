@@ -10,42 +10,42 @@ async function tempDir() {
   return await fs.mkdtemp(path.join(os.tmpdir(), 'data-ark-config-'))
 }
 
-test('defaultConfigDir trỏ vào ~/.data-ark', () => {
+test('defaultConfigDir points at ~/.data-ark', () => {
   assert.equal(defaultConfigDir(), path.join(os.homedir(), '.data-ark'))
 })
 
-test('loadConfig trả về object rỗng khi chưa có file', async () => {
+test('loadConfig returns an empty object when there is no file yet', async () => {
   const dir = await tempDir()
   assert.deepEqual(await loadConfig(dir), {})
 })
 
-test('saveConfig rồi loadConfig thì lấy lại đúng dữ liệu', async () => {
+test('saveConfig then loadConfig round-trips the data', async () => {
   const dir = await tempDir()
-  const config = { apiId: 12345, apiHash: 'abc', session: 'sess', defaultChat: '@kho' }
+  const config = { apiId: 12345, apiHash: 'abc', session: 'sess', defaultChat: '@store' }
 
   await saveConfig(config, dir)
 
   assert.deepEqual(await loadConfig(dir), config)
 })
 
-test('saveConfig tạo được thư mục chưa tồn tại', async () => {
-  const dir = path.join(await tempDir(), 'chua', 'ton', 'tai')
+test('saveConfig creates a directory that does not exist yet', async () => {
+  const dir = path.join(await tempDir(), 'does', 'not', 'exist')
 
   await saveConfig({ defaultChat: 'me' }, dir)
 
   assert.deepEqual(await loadConfig(dir), { defaultChat: 'me' })
 })
 
-test('file cấu hình chỉ chủ sở hữu đọc ghi được', async () => {
+test('the config file is readable and writable by its owner only', async () => {
   const dir = await tempDir()
 
-  await saveConfig({ session: 'bí mật' }, dir)
+  await saveConfig({ session: 'secret' }, dir)
 
   const stat = await fs.stat(path.join(dir, 'config.json'))
   assert.equal(stat.mode & 0o777, 0o600)
 })
 
-test('saveConfig không để lại file tạm', async () => {
+test('saveConfig leaves no temporary file behind', async () => {
   const dir = await tempDir()
 
   await saveConfig({ defaultChat: 'me' }, dir)
@@ -53,18 +53,18 @@ test('saveConfig không để lại file tạm', async () => {
   assert.deepEqual(await fs.readdir(dir), ['config.json'])
 })
 
-test('clearSession xoá session nhưng giữ phần còn lại', async () => {
+test('clearSession drops the session but keeps everything else', async () => {
   const dir = await tempDir()
-  await saveConfig({ apiId: 1, apiHash: 'h', session: 's', defaultChat: '@kho' }, dir)
+  await saveConfig({ apiId: 1, apiHash: 'h', session: 's', defaultChat: '@store' }, dir)
 
   await clearSession(dir)
 
-  assert.deepEqual(await loadConfig(dir), { apiId: 1, apiHash: 'h', defaultChat: '@kho' })
+  assert.deepEqual(await loadConfig(dir), { apiId: 1, apiHash: 'h', defaultChat: '@store' })
 })
 
-test('loadConfig báo lỗi rõ ràng khi file hỏng', async () => {
+test('loadConfig gives a clear error when the file is corrupt', async () => {
   const dir = await tempDir()
-  await fs.writeFile(path.join(dir, 'config.json'), '{ hỏng')
+  await fs.writeFile(path.join(dir, 'config.json'), '{ broken')
 
-  await assert.rejects(() => loadConfig(dir), /cấu hình/)
+  await assert.rejects(() => loadConfig(dir), /Corrupt config file/)
 })

@@ -42,48 +42,49 @@ export function parseManifest(input) {
   try {
     manifest = JSON.parse(text)
   } catch {
-    throw new Error('Không đọc được manifest: nội dung không phải JSON hợp lệ.')
+    throw new Error('Cannot read manifest: content is not valid JSON.')
   }
 
   if (manifest.v !== MANIFEST_VERSION) {
     throw new Error(
-      `Manifest dùng phiên bản ${manifest.v}, bản data-ark này chỉ hiểu phiên bản ${MANIFEST_VERSION}.`,
+      `Manifest uses version ${manifest.v}, this build of data-ark only understands version ${MANIFEST_VERSION}.`,
     )
   }
 
   if (!Array.isArray(manifest.chunks) || manifest.chunks.length === 0) {
-    throw new Error('Manifest thiếu danh sách chunk.')
+    throw new Error('Manifest has no chunk list.')
   }
 
   manifest.chunks.forEach((chunk, index) => {
     if (chunk.i !== index) {
-      throw new Error(`Manifest thiếu chunk số ${index}: danh sách chunk không liên tục.`)
+      throw new Error(`Manifest is missing chunk ${index}: the chunk list is not contiguous.`)
     }
   })
 
   const expectedChunks = Math.ceil(manifest.size / manifest.chunkSize)
   if (manifest.chunks.length !== expectedChunks) {
-    throw new Error(`Manifest thiếu ${expectedChunks - manifest.chunks.length} chunk(s).`)
+    throw new Error(`Manifest is missing ${expectedChunks - manifest.chunks.length} chunk(s).`)
   }
 
   const total = manifest.chunks.reduce((sum, chunk) => sum + chunk.size, 0)
   if (total !== manifest.size) {
     throw new Error(
-      `Tổng kích thước các chunk (${total}) không khớp kích thước file trong manifest (${manifest.size}).`,
+      `Chunk sizes add up to ${total}, but the manifest records a file size of ${manifest.size}.`,
     )
   }
 
-  // Restore ghi chunk i vào đúng offset i * chunkSize, nên bố cục phải đều:
-  // mọi chunk đúng bằng chunkSize, riêng chunk cuối là phần dư. Tổng đúng mà
-  // từng chunk lệch thì file ghép ra sẽ thủng lỗ hoặc dài thêm mà sha256 từng
-  // chunk vẫn khớp — sai âm thầm, đúng thứ data-ark không được phép để xảy ra.
+  // Restore writes chunk i at exactly offset i * chunkSize, so the layout must be
+  // uniform: every chunk is chunkSize, except the last one which is the remainder.
+  // A correct total with individually wrong sizes yields a file with a hole or
+  // extra length while every per-chunk sha256 still matches — silently wrong data,
+  // precisely what data-ark must never produce.
   manifest.chunks.forEach((chunk, index) => {
     const expected = Math.min(manifest.chunkSize, manifest.size - index * manifest.chunkSize)
     if (chunk.size !== expected) {
       throw new Error(
-        `Chunk ${index + 1} trong manifest ghi ${chunk.size} byte, nhưng theo bố cục ` +
-          `${manifest.chunkSize} byte mỗi chunk thì phải là ${expected} byte. ` +
-          'Manifest này mô tả sai vị trí các chunk, khôi phục sẽ ra file hỏng.',
+        `Manifest records ${chunk.size} bytes for chunk ${index + 1}, but a layout of ` +
+          `${manifest.chunkSize} bytes per chunk requires ${expected} bytes. ` +
+          'This manifest describes the wrong chunk positions; restoring it would produce a corrupt file.',
       )
     }
   })

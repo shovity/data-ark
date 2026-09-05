@@ -1,50 +1,50 @@
 # data-ark
 
-Cắt file lớn thành từng chunk 1.8GB và lưu trữ trên Telegram, khôi phục lại được nguyên vẹn.
+Split large files into 1.8GB chunks, store them on Telegram, and restore them intact.
 
-## Dùng ngay
+## Quick start
 
 ```bash
-npx data-ark login                        # chỉ cần một lần
-npx data-ark data.tar --to @kho_backup    # đích được ghi nhớ cho lần sau
-npx data-ark data.tar                     # từ lần thứ hai trở đi
+npx data-ark login                        # once only
+npx data-ark data.tar --to @my_backups    # the destination is remembered
+npx data-ark data.tar                     # from the second run on
 npx data-ark restore ark-20260905-7f3a91
 ```
 
-## Cần chuẩn bị
+## What you need
 
-- Node.js 18 trở lên.
-- `api_id` và `api_hash` lấy tại <https://my.telegram.org> → API development tools. Lệnh `login` sẽ hỏi hai giá trị này, kèm số điện thoại và mã xác nhận.
+- Node.js 18 or newer.
+- An `api_id` and `api_hash` from <https://my.telegram.org> → API development tools. The `login` command asks for both, plus your phone number and the verification code.
 
-data-ark đăng nhập bằng chính tài khoản Telegram của bạn (MTProto), không phải bot. Đây là điều kiện bắt buộc: Bot API chỉ cho upload 50MB mỗi file, còn tài khoản người dùng được 2GB.
+data-ark signs in with your own Telegram account (MTProto), not a bot. That is a hard requirement: the Bot API caps uploads at 50MB per file, while a user account gets 2GB.
 
-## Tuỳ chọn
+## Options
 
-| Cờ | Mặc định | Ý nghĩa |
+| Flag | Default | Meaning |
 |---|---|---|
-| `--to <chat>` | đích đã ghi nhớ | `@username`, `-100123…`, hoặc `me` |
-| `--chunk-size <n>` | `1800MB` | Ví dụ `1.8GB`, `500MB`. Trần cứng 1950MB. |
-| `--concurrency <n>` | `8` | Số phần 512KB gửi song song. Phải là số nguyên từ 1 đến 64. |
-| `--out <đường-dẫn>` | basename của tên trong manifest | Nơi ghi file khi restore, tính từ thư mục hiện tại nếu là đường dẫn tương đối |
+| `--to <chat>` | the remembered destination | `@username`, `-100123…`, or `me` |
+| `--chunk-size <n>` | `1800MB` | e.g. `1.8GB`, `500MB`. Hard ceiling 1950MB. |
+| `--concurrency <n>` | `8` | 512KB parts sent in parallel. An integer from 1 to 64. |
+| `--out <path>` | the basename from the manifest | Where to write the restored file; relative paths resolve against the current directory |
 
-## Hoạt động thế nào
+## How it works
 
-Mỗi lần chạy sinh ra một `backupId`. File được đọc thẳng theo offset, không tạo file tạm, và đẩy lên thành các document tên `<backupId>.partNNNN`. Xong hết, data-ark gửi thêm một manifest JSON liệt kê message id và sha256 của từng chunk. Restore chỉ cần `backupId`: nó tìm manifest trong chat, tải từng chunk về đúng vị trí trong một file `.partial`, đối chiếu sha256 và kích thước từng chunk, và chỉ đổi tên thành file thật sau khi *toàn bộ* chunk đã khớp.
+Every run mints a `backupId`. The file is read directly by offset — no temporary copies — and uploaded as documents named `<backupId>.partNNNN`. Once every chunk is up, data-ark sends a JSON manifest listing the message id and sha256 of each one. Restore needs only the `backupId`: it finds the manifest in the chat, downloads each chunk to its exact position in a `.partial` file, checks every chunk's sha256 and size, and renames it to the real file only after *all* chunks match.
 
-Đứt mạng giữa chừng lúc **upload** thì cứ chạy lại đúng lệnh cũ — tiến độ nằm ở `~/.data-ark/state/`, những chunk đã xong sẽ được bỏ qua (`backupId` giữ nguyên). Vài lưu ý về việc chạy lại:
+If the connection drops during an **upload**, just run the same command again — progress lives in `~/.data-ark/state/` and finished chunks are skipped, keeping the same `backupId`. Two things to know about rerunning:
 
-- Nếu chạy lại với `--to` khác với đích đã lưu trong tiến độ dở dang, data-ark **từ chối chạy** thay vì tự chuyển hướng — một backup không thể tách làm hai đích. Thông báo lỗi chỉ đường: bỏ `--to` để tiếp tục gửi vào đích cũ, hoặc xoá file trạng thái để bắt đầu backup mới.
-- Nếu chạy lại với `--chunk-size` khác, data-ark coi đó là một backup mới hoàn toàn (backup id mới), không resume.
+- Running again with a `--to` that differs from the destination stored in the unfinished progress makes data-ark **refuse to run** rather than silently redirect — one backup cannot be split across two destinations. The error points the way out: drop `--to` to keep sending to the original destination, or delete the state file to start a new backup.
+- Running again with a different `--chunk-size` is treated as an entirely new backup (new backup id), not a resume.
 
-**Restore không có trạng thái để resume.** Nhấn `Ctrl-C` giữa lúc restore thì không có gì được lưu — chạy lại sẽ tải lại từ đầu.
+**Restore keeps no state to resume from.** Pressing `Ctrl-C` mid-restore saves nothing — running again starts over.
 
-## Giới hạn cần biết
+## Limits worth knowing
 
-- Chunk không thể vượt 1950MB: Telegram nhận tối đa 4000 phần 512KB mỗi file, tức trần số học khoảng 1953MB, và data-ark chốt ở 1950MB để chừa biên an toàn.
-- Dữ liệu **không** được mã hoá. Đừng đẩy thứ gì bạn không muốn nằm trên hạ tầng của người khác.
-- Xoá message chunk trên Telegram là mất backup, không có cách cứu.
-- Giữ lấy `backupId`. Không có nó thì phải tự tìm manifest trong chat bằng tay.
+- A chunk cannot exceed 1950MB: Telegram accepts at most 4000 parts of 512KB per file, an arithmetic ceiling of about 1953MB, and data-ark stops at 1950MB to leave a safety margin.
+- The data is **not** encrypted. Don't upload anything you would mind sitting on someone else's infrastructure.
+- Deleting a chunk message on Telegram destroys the backup, with no way to recover it.
+- Keep the `backupId`. Without it you have to hunt for the manifest in the chat by hand.
 
-## Cấu hình lưu ở đâu
+## Where the config lives
 
-`~/.data-ark/config.json` (quyền 600) chứa `apiId`, `apiHash`, session và đích lưu mặc định. `npx data-ark logout` **chỉ xoá bản session lưu dưới máy** và giữ lại phần còn lại — phiên đăng nhập vẫn còn sống phía Telegram. Muốn cắt hẳn quyền truy cập thì vào Telegram → Settings → Devices (Active sessions) và thu hồi phiên đó.
+`~/.data-ark/config.json` (mode 600) holds `apiId`, `apiHash`, the session and the default destination. `npx data-ark logout` **only deletes the locally stored session** and keeps the rest — the session is still alive on Telegram's side. To revoke access for good, open Telegram → Settings → Devices (Active sessions) and terminate that session.

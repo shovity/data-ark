@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 
 import { formatBytes, formatDuration, renderProgress, createProgress } from '../src/progress.js'
 
-test('formatBytes chọn đơn vị hợp lý', () => {
+test('formatBytes picks a sensible unit', () => {
   assert.equal(formatBytes(0), '0 B')
   assert.equal(formatBytes(512), '512 B')
   assert.equal(formatBytes(1024), '1.0 KB')
@@ -13,7 +13,7 @@ test('formatBytes chọn đơn vị hợp lý', () => {
   assert.equal(formatBytes(1024 ** 4), '1.0 TB')
 })
 
-test('formatDuration đọc được cho người', () => {
+test('formatDuration is human readable', () => {
   assert.equal(formatDuration(0), '0s')
   assert.equal(formatDuration(45), '45s')
   assert.equal(formatDuration(90), '1m30s')
@@ -21,7 +21,7 @@ test('formatDuration đọc được cho người', () => {
   assert.equal(formatDuration(Infinity), '--')
 })
 
-test('renderProgress có nhãn, phần trăm, tốc độ và ETA', () => {
+test('renderProgress shows the label, percentage, speed and ETA', () => {
   const line = renderProgress({
     done: 500 * 1024 * 1024,
     total: 1000 * 1024 * 1024,
@@ -33,22 +33,22 @@ test('renderProgress có nhãn, phần trăm, tốc độ và ETA', () => {
   assert.match(line, /Chunk 1\/3/)
   assert.match(line, /50%/)
   assert.match(line, /50\.0 MB\/s/)
-  assert.match(line, /còn 10s/)
+  assert.match(line, /ETA 10s/)
 })
 
-test('renderProgress không chia cho 0 khi chưa trôi thời gian', () => {
+test('renderProgress does not divide by zero before any time has passed', () => {
   const line = renderProgress({ done: 0, total: 100, elapsedMs: 0, label: 'x', width: 10 })
   assert.match(line, /0%/)
   assert.doesNotMatch(line, /NaN/)
 })
 
-test('renderProgress ở 100% báo còn 0s', () => {
+test('renderProgress reports ETA 0s at 100%', () => {
   const line = renderProgress({ done: 100, total: 100, elapsedMs: 1000, label: 'x', width: 10 })
   assert.match(line, /100%/)
-  assert.match(line, /còn 0s/)
+  assert.match(line, /ETA 0s/)
 })
 
-test('createProgress gộp các lần cập nhật quá gần nhau', () => {
+test('createProgress coalesces updates that arrive too close together', () => {
   const lines = []
   let clock = 0
 
@@ -71,7 +71,7 @@ test('createProgress gộp các lần cập nhật quá gần nhau', () => {
   assert.match(lines[0], /30%/)
 })
 
-test('finish luôn vẽ dòng cuối và xuống dòng', () => {
+test('finish always draws a final line and a newline', () => {
   const lines = []
   let clock = 0
 
@@ -91,9 +91,9 @@ test('finish luôn vẽ dòng cuối và xuống dòng', () => {
   assert.match(lines[0], /\n$/)
 })
 
-test('renderProgress không bao giờ hiện ETA âm khi done vượt total', () => {
+test('renderProgress never shows a negative ETA when done overshoots total', () => {
   const line = renderProgress({ done: 1500, total: 1000, elapsedMs: 1000, label: 'x', width: 10 })
   assert.match(line, /100%/)
-  assert.match(line, /còn 0s/)
-  assert.doesNotMatch(line, /còn -/)
+  assert.match(line, /ETA 0s/)
+  assert.doesNotMatch(line, /ETA -/)
 })

@@ -9,60 +9,60 @@ function fakeSleep(log) {
   }
 }
 
-test('thành công ngay lần đầu thì không chờ', async () => {
+test('succeeding on the first try waits for nothing', async () => {
   const delays = []
-  const result = await withRetry(async () => 'xong', { sleep: fakeSleep(delays) })
+  const result = await withRetry(async () => 'done', { sleep: fakeSleep(delays) })
 
-  assert.equal(result, 'xong')
+  assert.equal(result, 'done')
   assert.deepEqual(delays, [])
 })
 
-test('thử lại cho tới khi thành công', async () => {
+test('retries until it succeeds', async () => {
   const delays = []
   let calls = 0
 
   const result = await withRetry(
     async () => {
       calls += 1
-      if (calls < 3) throw new Error('mạng lỗi')
-      return 'xong'
+      if (calls < 3) throw new Error('network error')
+      return 'done'
     },
     { baseDelayMs: 100, sleep: fakeSleep(delays) },
   )
 
-  assert.equal(result, 'xong')
+  assert.equal(result, 'done')
   assert.equal(calls, 3)
   assert.deepEqual(delays, [100, 200])
 })
 
-test('backoff lũy thừa cho tới lần cuối', async () => {
+test('exponential backoff up to the final attempt', async () => {
   const delays = []
 
   await assert.rejects(
-    () => withRetry(async () => { throw new Error('hỏng hẳn') }, {
+    () => withRetry(async () => { throw new Error('permanently broken') }, {
       attempts: 5,
       baseDelayMs: 100,
       sleep: fakeSleep(delays),
     }),
-    /hỏng hẳn/,
+    /permanently broken/,
   )
 
   assert.deepEqual(delays, [100, 200, 400, 800])
 })
 
-test('mặc định thử tối đa 5 lần', async () => {
+test('defaults to at most 5 attempts', async () => {
   let calls = 0
   const delays = []
 
   await assert.rejects(
-    () => withRetry(async () => { calls += 1; throw new Error('hỏng') }, { sleep: fakeSleep(delays), baseDelayMs: 1 }),
-    /hỏng/,
+    () => withRetry(async () => { calls += 1; throw new Error('broken') }, { sleep: fakeSleep(delays), baseDelayMs: 1 }),
+    /broken/,
   )
 
   assert.equal(calls, 5)
 })
 
-test('FLOOD_WAIT được tôn trọng đúng số giây máy chủ yêu cầu', async () => {
+test('FLOOD_WAIT is honoured for exactly the seconds the server asks for', async () => {
   const delays = []
   let calls = 0
 
@@ -75,7 +75,7 @@ test('FLOOD_WAIT được tôn trọng đúng số giây máy chủ yêu cầu',
         err.errorMessage = 'FLOOD_WAIT'
         throw err
       }
-      return 'xong'
+      return 'done'
     },
     { baseDelayMs: 100, sleep: fakeSleep(delays) },
   )
@@ -83,15 +83,15 @@ test('FLOOD_WAIT được tôn trọng đúng số giây máy chủ yêu cầu',
   assert.deepEqual(delays, [42000])
 })
 
-test('onRetry được gọi kèm lần thử và thời gian chờ', async () => {
+test('onRetry is called with the attempt number and the delay', async () => {
   const events = []
   let calls = 0
 
   await withRetry(
     async () => {
       calls += 1
-      if (calls < 2) throw new Error('mạng lỗi')
-      return 'xong'
+      if (calls < 2) throw new Error('network error')
+      return 'done'
     },
     {
       baseDelayMs: 100,
@@ -100,5 +100,5 @@ test('onRetry được gọi kèm lần thử và thời gian chờ', async () =
     },
   )
 
-  assert.deepEqual(events, [['mạng lỗi', 1, 100]])
+  assert.deepEqual(events, [['network error', 1, 100]])
 })

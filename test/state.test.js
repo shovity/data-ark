@@ -13,7 +13,7 @@ async function tempDir() {
 function sampleState(overrides = {}) {
   return {
     id: 'ark-20260905-7f3a91',
-    chat: '@kho_backup',
+    chat: '@my_backups',
     path: '/home/ai/data.tar',
     size: 100,
     mtimeMs: 1757000000000,
@@ -23,31 +23,31 @@ function sampleState(overrides = {}) {
   }
 }
 
-test('stateKey ổn định giữa các lần gọi', () => {
+test('stateKey is stable across calls', () => {
   const a = stateKey('/home/ai/data.tar', 100, 1757000000000)
   const b = stateKey('/home/ai/data.tar', 100, 1757000000000)
   assert.equal(a, b)
   assert.match(a, /^[0-9a-f]{40}$/)
 })
 
-test('stateKey đổi khi file bị sửa', () => {
-  const goc = stateKey('/home/ai/data.tar', 100, 1757000000000)
-  assert.notEqual(stateKey('/home/ai/data.tar', 101, 1757000000000), goc)
-  assert.notEqual(stateKey('/home/ai/data.tar', 100, 1757000000001), goc)
-  assert.notEqual(stateKey('/home/ai/khac.tar', 100, 1757000000000), goc)
+test('stateKey changes when the file changes', () => {
+  const original = stateKey('/home/ai/data.tar', 100, 1757000000000)
+  assert.notEqual(stateKey('/home/ai/data.tar', 101, 1757000000000), original)
+  assert.notEqual(stateKey('/home/ai/data.tar', 100, 1757000000001), original)
+  assert.notEqual(stateKey('/home/ai/other.tar', 100, 1757000000000), original)
 })
 
-test('stateDir nằm dưới thư mục cấu hình', async () => {
+test('stateDir lives under the config directory', async () => {
   const dir = await tempDir()
   assert.equal(stateDir(dir), path.join(dir, 'state'))
 })
 
-test('loadState trả null khi chưa có gì', async () => {
+test('loadState returns null when nothing is stored', async () => {
   const dir = await tempDir()
-  assert.equal(await loadState('khong-co', dir), null)
+  assert.equal(await loadState('missing', dir), null)
 })
 
-test('saveState rồi loadState lấy lại đúng dữ liệu', async () => {
+test('saveState then loadState round-trips the data', async () => {
   const dir = await tempDir()
   const state = sampleState()
 
@@ -56,7 +56,7 @@ test('saveState rồi loadState lấy lại đúng dữ liệu', async () => {
   assert.deepEqual(await loadState('k1', dir), state)
 })
 
-test('markChunkDone ghi lại tiến độ ngay lập tức', async () => {
+test('markChunkDone persists progress immediately', async () => {
   const dir = await tempDir()
   const state = sampleState()
   await saveState('k1', state, dir)
@@ -67,7 +67,7 @@ test('markChunkDone ghi lại tiến độ ngay lập tức', async () => {
   assert.deepEqual((await loadState('k1', dir)).done['0'], { msgId: 1234, size: 40, sha256: 'a3f1' })
 })
 
-test('markChunkDone tích luỹ chứ không ghi đè chunk trước', async () => {
+test('markChunkDone accumulates instead of overwriting earlier chunks', async () => {
   const dir = await tempDir()
   let state = sampleState()
   await saveState('k1', state, dir)
@@ -79,7 +79,7 @@ test('markChunkDone tích luỹ chứ không ghi đè chunk trước', async () 
   assert.deepEqual(Object.keys(onDisk.done).sort(), ['0', '1'])
 })
 
-test('saveState không để lại file tạm', async () => {
+test('saveState leaves no temporary file behind', async () => {
   const dir = await tempDir()
 
   await saveState('k1', sampleState(), dir)
@@ -87,7 +87,7 @@ test('saveState không để lại file tạm', async () => {
   assert.deepEqual(await fs.readdir(stateDir(dir)), ['k1.json'])
 })
 
-test('clearState xoá state và không kêu ca nếu đã bị xoá', async () => {
+test('clearState removes the state and stays quiet if it is already gone', async () => {
   const dir = await tempDir()
   await saveState('k1', sampleState(), dir)
 

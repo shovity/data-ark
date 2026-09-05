@@ -22,7 +22,7 @@ export async function loadConfig(dir = defaultConfigDir()) {
   try {
     return JSON.parse(raw)
   } catch {
-    throw new Error(`File cấu hình hỏng: ${file}. Xoá nó rồi chạy lại "data-ark login".`)
+    throw new Error(`Corrupt config file: ${file}. Delete it and run "data-ark login" again.`)
   }
 }
 

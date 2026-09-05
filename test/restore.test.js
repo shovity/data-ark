@@ -15,7 +15,7 @@ function sha(buf) {
 }
 
 /**
- * Dựng một "chat" giả chứa các chunk và manifest của một backup.
+ * Builds a fake "chat" holding the chunks and manifest of one backup.
  */
 function fakeBackup({ id = 'ark-20260905-7f3a91', name = 'data.tar', chunkSize = 400, total = 1000 } = {}) {
   const content = randomBytes(total)
@@ -82,17 +82,17 @@ function deps(client, configDir) {
   }
 }
 
-async function tempConfig(defaultChat = '@kho') {
+async function tempConfig(defaultChat = '@store') {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'data-ark-restore-'))
   const configDir = path.join(dir, 'config')
   await saveConfig({ apiId: 1, apiHash: 'h', session: 's', defaultChat }, configDir)
   return { dir, configDir }
 }
 
-test('ghép lại đúng file gốc', async () => {
+test('reassembles the original file exactly', async () => {
   const backup = fakeBackup()
   const { dir, configDir } = await tempConfig()
-  const out = path.join(dir, 'ra.tar')
+  const out = path.join(dir, 'out.tar')
 
   const result = await runRestore(backup.id, { out }, deps(fakeClient(backup), configDir))
 
@@ -101,85 +101,85 @@ test('ghép lại đúng file gốc', async () => {
   assert.deepEqual(await fs.readFile(out), backup.content)
 })
 
-test('không có --out thì dùng tên trong manifest', async () => {
-  const backup = fakeBackup({ name: 'sao-luu.tar' })
+test('without --out it uses the name from the manifest', async () => {
+  const backup = fakeBackup({ name: 'backup.tar' })
   const { dir, configDir } = await tempConfig()
   const cwd = process.cwd()
   process.chdir(dir)
 
   try {
     const result = await runRestore(backup.id, {}, deps(fakeClient(backup), configDir))
-    assert.equal(path.basename(result.path), 'sao-luu.tar')
+    assert.equal(path.basename(result.path), 'backup.tar')
     assert.deepEqual(await fs.readFile(result.path), backup.content)
   } finally {
     process.chdir(cwd)
   }
 })
 
-test('không để lại file .partial khi thành công', async () => {
+test('leaves no .partial file behind on success', async () => {
   const backup = fakeBackup()
   const { dir, configDir } = await tempConfig()
-  const out = path.join(dir, 'ra.tar')
+  const out = path.join(dir, 'out.tar')
 
   await runRestore(backup.id, { out }, deps(fakeClient(backup), configDir))
 
   const files = await fs.readdir(dir)
-  assert.ok(!files.some((f) => f.endsWith('.partial')), `còn sót: ${files.join(', ')}`)
+  assert.ok(!files.some((f) => f.endsWith('.partial')), `left behind: ${files.join(', ')}`)
 })
 
-test('không tìm thấy manifest thì báo lỗi kèm backup id', async () => {
+test('a missing manifest is reported with the backup id', async () => {
   const backup = fakeBackup()
   const { dir, configDir } = await tempConfig()
   const client = fakeClient(backup, { hideMessageId: 2000 })
 
   await assert.rejects(
-    () => runRestore(backup.id, { out: path.join(dir, 'ra.tar') }, deps(client, configDir)),
+    () => runRestore(backup.id, { out: path.join(dir, 'out.tar') }, deps(client, configDir)),
     new RegExp(backup.id),
   )
 })
 
-test('thiếu một chunk thì dừng ngay và nói rõ chunk nào', async () => {
+test('a missing chunk stops immediately and names which one', async () => {
   const backup = fakeBackup()
   const { dir, configDir } = await tempConfig()
   const client = fakeClient(backup, { hideMessageId: 1001 })
 
   await assert.rejects(
-    () => runRestore(backup.id, { out: path.join(dir, 'ra.tar') }, deps(client, configDir)),
+    () => runRestore(backup.id, { out: path.join(dir, 'out.tar') }, deps(client, configDir)),
     /chunk 2\/3/,
   )
 })
 
-test('sha256 lệch thì báo lỗi và giữ lại file .partial để điều tra', async () => {
+test('a sha256 mismatch errors and keeps the .partial file for inspection', async () => {
   const backup = fakeBackup()
   const { dir, configDir } = await tempConfig()
-  const out = path.join(dir, 'ra.tar')
+  const out = path.join(dir, 'out.tar')
   const client = fakeClient(backup, { corruptMessageId: 1001 })
 
-  await assert.rejects(() => runRestore(backup.id, { out }, deps(client, configDir)), /không khớp/)
+  await assert.rejects(() => runRestore(backup.id, { out }, deps(client, configDir)), /does not match/)
 
   const files = await fs.readdir(dir)
-  assert.ok(files.includes('ra.tar.partial'))
-  assert.ok(!files.includes('ra.tar'))
+  assert.ok(files.includes('out.tar.partial'))
+  assert.ok(!files.includes('out.tar'))
 })
 
-test('file đích đã tồn tại thì từ chối ghi đè trừ khi được đồng ý', async () => {
+test('an existing target is not overwritten unless confirmed', async () => {
   const backup = fakeBackup()
   const { dir, configDir } = await tempConfig()
-  const out = path.join(dir, 'ra.tar')
-  await fs.writeFile(out, 'dữ liệu cũ')
+  const out = path.join(dir, 'out.tar')
+  await fs.writeFile(out, 'old data')
 
   await assert.rejects(
     () => runRestore(backup.id, { out }, { ...deps(fakeClient(backup), configDir), confirm: async () => false }),
-    /Đã huỷ/,
+    /Cancelled/,
   )
 
-  assert.equal(await fs.readFile(out, 'utf8'), 'dữ liệu cũ')
+  assert.equal(await fs.readFile(out, 'utf8'), 'old data')
 
   await runRestore(backup.id, { out }, { ...deps(fakeClient(backup), configDir), confirm: async () => true })
   assert.deepEqual(await fs.readFile(out), backup.content)
 })
 
-test('tên file trong manifest có path traversal thì vẫn ghi trong thư mục hiện tại', async () => {
+test('a path-traversing name in the manifest still writes into the current directory', async () => {
   const backup = fakeBackup({ name: '../../etc/evil.tar' })
   const { dir, configDir } = await tempConfig()
   const cwd = process.cwd()
@@ -195,7 +195,7 @@ test('tên file trong manifest có path traversal thì vẫn ghi trong thư mụ
   }
 })
 
-test('tiến trình chunk cập nhật theo dữ liệu đã tải, không kẹt ở 0%', async () => {
+test('chunk progress tracks the downloaded data instead of sticking at 0%', async () => {
   const bytes = randomBytes(900)
   const document = { size: bytes.length }
   const message = { id: 1, media: { document } }
@@ -235,54 +235,54 @@ test('tiến trình chunk cập nhật theo dữ liệu đã tải, không kẹt
     const percents = lines.map((line) => Number(line.match(/(\d+)%/)[1]))
     assert.ok(
       percents.some((p) => p > 0 && p < 100),
-      `không có dòng nào cho thấy tiến trình giữa chừng (>0% và <100%): ${lines.join(' | ')}`,
+      `no line shows intermediate progress (>0% and <100%): ${lines.join(' | ')}`,
     )
-    assert.equal(percents.at(-1), 100, `dòng cuối phải là 100%: ${lines.join(' | ')}`)
+    assert.equal(percents.at(-1), 100, `the last line must be 100%: ${lines.join(' | ')}`)
   } finally {
     await handle.close()
   }
 })
 
-test('chunk về thiếu byte thì báo đúng số byte lệch, không chỉ nói sha256', async () => {
+test('a short chunk reports the byte counts, not just a sha256 mismatch', async () => {
   const backup = fakeBackup()
   const { dir, configDir } = await tempConfig()
-  const out = path.join(dir, 'ra.tar')
+  const out = path.join(dir, 'out.tar')
   const client = fakeClient(backup, { truncateMessageId: 1001 })
 
   await assert.rejects(
     () => runRestore(backup.id, { out }, deps(client, configDir)),
-    /Chunk 2 có 390 byte, manifest ghi 400 byte/,
+    /Chunk 2 has 390 bytes, the manifest records 400 bytes/,
   )
 
   const files = await fs.readdir(dir)
-  assert.ok(files.includes('ra.tar.partial'), 'giữ .partial để điều tra')
-  assert.ok(!files.includes('ra.tar'), 'không được đổi tên thành file thật')
+  assert.ok(files.includes('out.tar.partial'), 'the .partial is kept for inspection')
+  assert.ok(!files.includes('out.tar'), 'it must not be renamed into the real file')
 })
 
-test('tên trong manifest là ".." thì từ chối và bảo dùng --out', async () => {
+test('a manifest name of ".." is rejected with a pointer to --out', async () => {
   const backup = fakeBackup({ name: '..' })
   const { dir, configDir } = await tempConfig()
 
-  // Chạy trong một thư mục con để thư mục cha ("..") là thư mục ta tự dựng,
-  // không phải os.tmpdir() vốn bị các file test chạy song song ghi vào.
-  const lamViec = path.join(dir, 'lam-viec')
-  await fs.mkdir(lamViec)
-  const truoc = new Set(await fs.readdir(dir))
+  // Run inside a subdirectory so the parent ("..") is a directory we own, rather than
+  // os.tmpdir(), which the test files running in parallel also write into.
+  const workDir = path.join(dir, 'work')
+  await fs.mkdir(workDir)
+  const before = new Set(await fs.readdir(dir))
 
   const cwd = process.cwd()
-  process.chdir(lamViec)
+  process.chdir(workDir)
 
   try {
     await assert.rejects(() => runRestore(backup.id, {}, deps(fakeClient(backup), configDir)), /--out/)
 
-    const moi = (await fs.readdir(dir)).filter((f) => !truoc.has(f))
-    assert.deepEqual(moi, [], `không được tạo gì ở thư mục cha, nhưng thấy: ${moi.join(', ')}`)
+    const created = (await fs.readdir(dir)).filter((f) => !before.has(f))
+    assert.deepEqual(created, [], `nothing may be created in the parent, but found: ${created.join(', ')}`)
   } finally {
     process.chdir(cwd)
   }
 })
 
-test('tên trong manifest là "." hoặc rỗng cũng bị từ chối', async () => {
+test('a manifest name of "." or empty is rejected too', async () => {
   for (const name of ['.', '', '/']) {
     const backup = fakeBackup({ name })
     const { dir, configDir } = await tempConfig()
@@ -293,7 +293,7 @@ test('tên trong manifest là "." hoặc rỗng cũng bị từ chối', async (
       await assert.rejects(
         () => runRestore(backup.id, {}, deps(fakeClient(backup), configDir)),
         /--out/,
-        `tên ${JSON.stringify(name)} phải bị từ chối`,
+        `the name ${JSON.stringify(name)} must be rejected`,
       )
     } finally {
       process.chdir(cwd)
@@ -301,26 +301,26 @@ test('tên trong manifest là "." hoặc rỗng cũng bị từ chối', async (
   }
 })
 
-test('file ghép xong sai độ dài thì báo lỗi thay vì đổi tên', async () => {
+test('an assembled file of the wrong length errors instead of being renamed', async () => {
   const backup = fakeBackup()
   const { dir, configDir } = await tempConfig()
-  const out = path.join(dir, 'ra.tar')
+  const out = path.join(dir, 'out.tar')
 
-  // Giả lập một lỗi bố cục: chunk cuối bị ghi lệch 100 byte về sau, nhưng vẫn
-  // báo về đúng size và sha256 nên mọi kiểm tra theo chunk đều xanh.
+  // Simulate a layout bug: the last chunk is written 100 bytes too far along, but
+  // still reports the right size and sha256, so every per-chunk check passes.
   const base = deps(fakeClient(backup), configDir)
-  const lech = {
+  const skewed = {
     ...base,
     downloadChunk: (c, message, handle, offset, onProgress) =>
       base.downloadChunk(c, message, handle, message.id === 1002 ? offset + 100 : offset, onProgress),
   }
 
   await assert.rejects(
-    () => runRestore(backup.id, { out }, lech),
-    /File ghép xong có 1100 byte, manifest ghi 1000 byte/,
+    () => runRestore(backup.id, { out }, skewed),
+    /The assembled file has 1100 bytes, the manifest records 1000 bytes/,
   )
 
   const files = await fs.readdir(dir)
-  assert.ok(files.includes('ra.tar.partial'))
-  assert.ok(!files.includes('ra.tar'))
+  assert.ok(files.includes('out.tar.partial'))
+  assert.ok(!files.includes('out.tar'))
 })

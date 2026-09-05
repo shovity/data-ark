@@ -1,9 +1,27 @@
 {
   "name": "data-ark",
   "version": "0.1.0",
-  "description": "Cắt file lớn thành chunk và lưu trữ trên Telegram",
+  "description": "Split large files into chunks and store them on Telegram",
+  "keywords": [
+    "telegram",
+    "backup",
+    "chunk",
+    "split",
+    "restore",
+    "cli",
+    "mtproto"
+  ],
+  "homepage": "https://github.com/shovity/data-ark#readme",
+  "bugs": {
+    "url": "https://github.com/shovity/data-ark/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shovity/data-ark.git"
+  },
   "type": "module",
   "license": "MIT",
+  "author": "shovity",
   "bin": {
     "data-ark": "bin/data-ark.js"
   },

@@ -19,44 +19,44 @@ async function runCli(args) {
   }
 }
 
-test('--help in trợ giúp và thoát 0', async () => {
+test('--help prints the help and exits 0', async () => {
   const { code, stdout } = await runCli(['--help'])
   assert.equal(code, 0)
   assert.match(stdout, /npx data-ark restore/)
 })
 
-test('không tham số cũng in trợ giúp', async () => {
+test('no arguments prints the help too', async () => {
   const { code, stdout } = await runCli([])
   assert.equal(code, 0)
-  assert.match(stdout, /Cách dùng/)
+  assert.match(stdout, /Usage/)
 })
 
-test('cờ lạ thoát mã 2 kèm trợ giúp', async () => {
-  const { code, stderr } = await runCli(['data.tar', '--bay-bong'])
+test('an unknown flag exits 2 with the help', async () => {
+  const { code, stderr } = await runCli(['data.tar', '--made-up'])
   assert.equal(code, 2)
-  assert.match(stderr, /--bay-bong/)
-  assert.match(stderr, /Cách dùng/)
+  assert.match(stderr, /--made-up/)
+  assert.match(stderr, /Usage/)
 })
 
-test('restore thiếu backup id báo lỗi có ví dụ, không phải stack trace', async () => {
+test('restore without a backup id gives an example, not a stack trace', async () => {
   const { code, stderr } = await runCli(['restore'])
   assert.equal(code, 1)
-  assert.match(stderr, /Thiếu backup id/)
+  assert.match(stderr, /Missing backup id/)
   assert.doesNotMatch(stderr, /at .*\.js:\d+/)
 })
 
-test('upload file không tồn tại báo lỗi gọn, không stack trace', async () => {
-  const { code, stderr } = await runCli(['/khong/he/ton/tai.tar'])
+test('uploading a nonexistent file gives a short error, not a stack trace', async () => {
+  const { code, stderr } = await runCli(['/does/not/exist/at/all.tar'])
   assert.equal(code, 1)
-  assert.match(stderr, /Lỗi:/)
+  assert.match(stderr, /Error:/)
   assert.doesNotMatch(stderr, /at .*\.js:\d+/)
 })
 
 test(
-  'SIGINT khi đang login: thoát 130, không tuyên bố sai về tiến độ',
+  'SIGINT during login: exits 130 without claiming anything false about progress',
   { timeout: 10_000 },
   async () => {
-    // HOME trỏ vào thư mục tạm cô lập để login không bao giờ chạm tới ~/.data-ark thật.
+    // HOME points at an isolated temp directory so login never touches the real ~/.data-ark.
     const home = await fs.mkdtemp(path.join(os.tmpdir(), 'data-ark-sigint-'))
 
     try {
@@ -70,7 +70,7 @@ test(
       const { code } = await new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
           child.kill('SIGKILL')
-          reject(new Error(`Không thấy prompt api_id sau khi chờ. stdout hiện có: ${JSON.stringify(stdout)}`))
+          reject(new Error(`No api_id prompt appeared in time. stdout so far: ${JSON.stringify(stdout)}`))
         }, 5000)
 
         child.stdout.on('data', (chunk) => {
@@ -96,7 +96,7 @@ test(
       })
 
       assert.equal(code, 130)
-      assert.equal(stderr, '\nĐã dừng.\n')
+      assert.equal(stderr, '\nStopped.\n')
     } finally {
       await fs.rm(home, { recursive: true, force: true })
     }

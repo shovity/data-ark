@@ -20,8 +20,8 @@ function documentFileName(message) {
 async function realSearchManifest(client, peer, backupId) {
   const wanted = manifestFileName(backupId)
 
-  // Dùng client.getMessages thay vì raw Api.messages.Search: nó tự lo offset,
-  // hash và phân trang, nên không phải tự dựng các trường dễ sai kiểu.
+  // Use client.getMessages instead of a raw Api.messages.Search: it handles offsets,
+  // hashes and pagination itself, so we don't hand-build easily mistyped fields.
   const messages = await client.getMessages(peer, {
     search: backupId,
     filter: new Api.InputMessagesFilterDocument(),
@@ -44,17 +44,17 @@ export async function realDownloadChunk(client, message, handle, offset, onProgr
   return await downloadToFile(client, message, handle.fd, { offset, onProgress })
 }
 
-// manifest.name đến từ dữ liệu tải về Telegram — không tin nó khi tự chọn đường
-// dẫn. path.basename chặn được "../../x" nhưng vẫn trả về "..", "." hay "" cho
-// vài tên bệnh: path.resolve('..') là thư mục cha, nên file .partial hàng GB sẽ
-// nằm ngoài thư mục hiện tại và chỉ vỡ ra ở bước rename.
+// manifest.name comes from data downloaded off Telegram — don't trust it when picking
+// a path ourselves. path.basename stops "../../x" but still returns "..", "." or "" for
+// a few pathological names: path.resolve('..') is the parent directory, so a multi-GB
+// .partial file would land outside the current directory and only blow up at rename.
 function safeOutName(name) {
   const base = path.basename(String(name ?? ''))
 
   if (base === '' || base === '.' || base === '..') {
     throw new Error(
-      `Tên file trong manifest ("${name}") không dùng được làm tên file. ` +
-        'Chạy lại kèm --out <đường-dẫn> để tự chỉ định nơi ghi.',
+      `The name in the manifest ("${name}") cannot be used as a file name. ` +
+        'Run again with --out <path> to choose where to write.',
     )
   }
 
@@ -65,7 +65,7 @@ async function askConfirm(question) {
   const rl = readline.createInterface({ input: stdin, output: stdout })
   const answer = await rl.question(question)
   rl.close()
-  return /^(c|y)/i.test(answer.trim())
+  return /^y/i.test(answer.trim())
 }
 
 export async function runRestore(backupId, options = {}, deps = {}) {
@@ -94,18 +94,18 @@ export async function runRestore(backupId, options = {}, deps = {}) {
 
     if (!manifestMessage) {
       throw new Error(
-        `Không tìm thấy manifest của ${backupId} trong ${chat}. ` +
-          'Kiểm tra lại backup id, hoặc dùng --to để trỏ đúng chat.',
+        `No manifest found for ${backupId} in ${chat}. ` +
+          'Check the backup id, or use --to to point at the right chat.',
       )
     }
 
     const manifest = parseManifest(await readMessageBytes(client, manifestMessage))
-    // Khi người dùng tự chỉ định --out thì tôn trọng nguyên văn đường dẫn đó.
+    // When the user passes --out, respect that path verbatim.
     const target = path.resolve(options.out ?? safeOutName(manifest.name))
     const partial = `${target}.partial`
 
-    // Chỉ ENOENT mới có nghĩa là "chưa có file". Lỗi quyền hay lỗi I/O mà bị coi
-    // là vắng mặt thì data-ark sẽ ghi đè file của người dùng mà không hỏi.
+    // Only ENOENT means "no file yet". Treating a permission or I/O error as absence
+    // would have data-ark overwrite the user's file without asking.
     let exists = true
     try {
       await fs.stat(target)
@@ -114,12 +114,12 @@ export async function runRestore(backupId, options = {}, deps = {}) {
       exists = false
     }
 
-    if (exists && !(await confirm(`${target} đã tồn tại. Ghi đè? [c/K] `))) {
-      throw new Error('Đã huỷ theo yêu cầu.')
+    if (exists && !(await confirm(`${target} already exists. Overwrite? [y/N] `))) {
+      throw new Error('Cancelled on request.')
     }
 
     log(`Backup ${manifest.id}`)
-    log(`File   ${target} (${formatBytes(manifest.size)}, ${manifest.chunks.length} chunk)\n`)
+    log(`File   ${target} (${formatBytes(manifest.size)}, ${manifest.chunks.length} chunks)\n`)
 
     const handle = await fs.open(partial, 'w+')
 
@@ -131,8 +131,8 @@ export async function runRestore(backupId, options = {}, deps = {}) {
 
         if (!message) {
           throw new Error(
-            `Thiếu chunk ${chunk.i + 1}/${manifest.chunks.length}: message ${chunk.msgId} không còn trong ${chat}. ` +
-              'Backup này không khôi phục được.',
+            `Missing chunk ${chunk.i + 1}/${manifest.chunks.length}: message ${chunk.msgId} is no longer in ${chat}. ` +
+              'This backup cannot be restored.',
           )
         }
 
@@ -156,13 +156,13 @@ export async function runRestore(backupId, options = {}, deps = {}) {
 
         if (size !== chunk.size) {
           throw new Error(
-            `Chunk ${chunk.i + 1} có ${size} byte, manifest ghi ${chunk.size} byte — không khớp.`,
+            `Chunk ${chunk.i + 1} has ${size} bytes, the manifest records ${chunk.size} bytes — mismatch.`,
           )
         }
 
         if (sha256 !== chunk.sha256) {
           throw new Error(
-            `Chunk ${chunk.i + 1} có sha256 không khớp manifest. File tải về giữ ở ${partial} để kiểm tra.`,
+            `Chunk ${chunk.i + 1} has a sha256 that does not match the manifest. The download is kept at ${partial} for inspection.`,
           )
         }
       }
@@ -170,28 +170,29 @@ export async function runRestore(backupId, options = {}, deps = {}) {
       await handle.close()
     }
 
-    // Chốt chặn cuối: mọi chunk khớp sha256 mà file vẫn sai độ dài thì bố cục đã
-    // lệch ở đâu đó. Thà báo lỗi còn hơn đổi tên một file sai thành file thật.
+    // Last line of defence: if every chunk matched its sha256 and the file is still the
+    // wrong length, the layout went wrong somewhere. Better to fail than to rename a
+    // wrong file into the real one.
     const written = await fs.stat(partial)
 
     if (written.size !== manifest.size) {
       throw new Error(
-        `File ghép xong có ${written.size} byte, manifest ghi ${manifest.size} byte — không khớp. ` +
-          `File tải về giữ ở ${partial} để kiểm tra.`,
+        `The assembled file has ${written.size} bytes, the manifest records ${manifest.size} bytes — mismatch. ` +
+          `The download is kept at ${partial} for inspection.`,
       )
     }
 
     await fs.rename(partial, target)
 
-    log(`\nXong. Đã ghi ${formatBytes(manifest.size)} vào ${target}`)
+    log(`\nDone. Wrote ${formatBytes(manifest.size)} to ${target}`)
 
     return { path: target, size: manifest.size }
   } finally {
-    // Ngắt kết nối hỏng thì cũng không được nuốt mất lỗi thật đang bay lên.
+    // A failing disconnect must not swallow the real error already on its way up.
     try {
       await disconnect(client)
     } catch (err) {
-      warn(`\nCảnh báo: không đóng được kết nối Telegram: ${err.message}\n`)
+      warn(`\nWarning: could not close the Telegram connection: ${err.message}\n`)
     }
   }
 }

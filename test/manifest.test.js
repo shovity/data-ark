@@ -30,29 +30,29 @@ function sampleManifest(overrides = {}) {
   })
 }
 
-test('newBackupId theo đúng khuôn ark-YYYYMMDD-hex', () => {
+test('newBackupId follows the ark-YYYYMMDD-hex shape', () => {
   const id = newBackupId(new Date('2026-09-05T07:40:12.000Z'), () => '7f3a91')
   assert.equal(id, 'ark-20260905-7f3a91')
 })
 
-test('newBackupId thật sự ngẫu nhiên và đúng khuôn', () => {
+test('newBackupId is genuinely random and well formed', () => {
   const a = newBackupId()
   const b = newBackupId()
   assert.match(a, /^ark-\d{8}-[0-9a-f]{6}$/)
   assert.notEqual(a, b)
 })
 
-test('chunkFileName đánh số từ 1 và đệm bốn chữ số', () => {
+test('chunkFileName numbers from 1 and pads to four digits', () => {
   assert.equal(chunkFileName('ark-1', 0), 'ark-1.part0001')
   assert.equal(chunkFileName('ark-1', 41), 'ark-1.part0042')
   assert.equal(chunkFileName('ark-1', 1233), 'ark-1.part1234')
 })
 
-test('manifestFileName kết thúc bằng .manifest.json', () => {
+test('manifestFileName ends in .manifest.json', () => {
   assert.equal(manifestFileName('ark-1'), 'ark-1.manifest.json')
 })
 
-test('buildManifest gắn phiên bản 1 và sắp chunk theo thứ tự', () => {
+test('buildManifest stamps version 1 and orders the chunks', () => {
   const m = buildManifest({
     id: 'ark-1',
     name: 'data.tar',
@@ -66,41 +66,41 @@ test('buildManifest gắn phiên bản 1 và sắp chunk theo thứ tự', () =>
   assert.deepEqual(m.chunks.map((c) => c.i), [0, 1, 2])
 })
 
-test('serialize rồi parse thì ra đúng manifest ban đầu', () => {
+test('serialize then parse returns the original manifest', () => {
   const m = sampleManifest()
   assert.deepEqual(parseManifest(serializeManifest(m)), m)
 })
 
-test('parseManifest nhận cả chuỗi lẫn Buffer', () => {
+test('parseManifest accepts both a string and a Buffer', () => {
   const m = sampleManifest()
   assert.deepEqual(parseManifest(serializeManifest(m).toString('utf8')), m)
 })
 
-test('parseManifest từ chối phiên bản lạ', () => {
+test('parseManifest rejects an unknown version', () => {
   const m = { ...sampleManifest(), v: 2 }
-  assert.throws(() => parseManifest(JSON.stringify(m)), /phiên bản/)
+  assert.throws(() => parseManifest(JSON.stringify(m)), /version/)
 })
 
-test('parseManifest phát hiện thiếu chunk', () => {
+test('parseManifest detects a missing chunk', () => {
   const m = sampleManifest()
   m.chunks = m.chunks.slice(0, 2)
-  assert.throws(() => parseManifest(JSON.stringify(m)), /thiếu/)
+  assert.throws(() => parseManifest(JSON.stringify(m)), /missing/)
 })
 
-test('parseManifest phát hiện tổng size lệch', () => {
+test('parseManifest detects a mismatched total size', () => {
   const m = sampleManifest()
   m.chunks[0].size = 39
-  assert.throws(() => parseManifest(JSON.stringify(m)), /không khớp/)
+  assert.throws(() => parseManifest(JSON.stringify(m)), /add up to/)
 })
 
-test('parseManifest từ chối JSON hỏng', () => {
-  assert.throws(() => parseManifest('{ hỏng'), /đọc được/)
+test('parseManifest rejects broken JSON', () => {
+  assert.throws(() => parseManifest('{ broken'), /not valid JSON/)
 })
 
-test('parseManifest bắt bố cục chunk lệch dù tổng size vẫn đúng', () => {
-  // 1000 byte, chunkSize 400 → phải là [400, 400, 200]. Bộ [200, 400, 400] có
-  // tổng đúng, số chunk đúng, i liên tục, sha256 từng chunk khớp — nhưng restore
-  // ghi chunk i vào offset i*400 nên sẽ tạo ra file 1200 byte thủng lỗ.
+test('parseManifest catches a skewed chunk layout even when the total is right', () => {
+  // 1000 bytes at chunkSize 400 must be [400, 400, 200]. The set [200, 400, 400] has
+  // the right total, the right count, contiguous i and matching per-chunk sha256 —
+  // but restore writes chunk i at offset i*400, producing a 1200-byte file with a hole.
   const m = buildManifest({
     id: 'ark-1',
     name: 'data.tar',
@@ -114,10 +114,10 @@ test('parseManifest bắt bố cục chunk lệch dù tổng size vẫn đúng',
     createdAt: '2026-09-05T07:40:12.000Z',
   })
 
-  assert.throws(() => parseManifest(JSON.stringify(m)), /Chunk 1 .*200 byte.*400 byte/s)
+  assert.throws(() => parseManifest(JSON.stringify(m)), /records 200 bytes for chunk 1.*400 bytes/s)
 })
 
-test('parseManifest bắt chunk cuối dài hơn phần dư', () => {
+test('parseManifest catches a last chunk longer than the remainder', () => {
   const m = buildManifest({
     id: 'ark-1',
     name: 'data.tar',
@@ -131,10 +131,10 @@ test('parseManifest bắt chunk cuối dài hơn phần dư', () => {
     createdAt: '2026-09-05T07:40:12.000Z',
   })
 
-  assert.throws(() => parseManifest(JSON.stringify(m)), /sai vị trí các chunk/)
+  assert.throws(() => parseManifest(JSON.stringify(m)), /wrong chunk positions/)
 })
 
-test('parseManifest chấp nhận bố cục đều đúng chuẩn', () => {
+test('parseManifest accepts a correct uniform layout', () => {
   const m = buildManifest({
     id: 'ark-1',
     name: 'data.tar',

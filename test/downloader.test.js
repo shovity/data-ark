@@ -29,13 +29,13 @@ function fakeClient(chunks) {
 
 async function tempFd(size) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'data-ark-download-'))
-  const file = path.join(dir, 'dich.bin')
+  const file = path.join(dir, 'target.bin')
   const handle = await fs.open(file, 'w+')
   if (size) await handle.truncate(size)
   return { file, handle }
 }
 
-test('ghi nội dung vào đúng đầu file', async () => {
+test('writes the content at the start of the file', async () => {
   const content = randomBytes(1500)
   const { file, handle } = await tempFd(1500)
   const client = fakeClient([content.subarray(0, 1000), content.subarray(1000)])
@@ -48,21 +48,21 @@ test('ghi nội dung vào đúng đầu file', async () => {
   assert.deepEqual(await fs.readFile(file), content)
 })
 
-test('ghi vào đúng offset giữa file', async () => {
-  const dau = Buffer.alloc(1000, 0)
-  const noiDung = randomBytes(500)
+test('writes at the right offset in the middle of the file', async () => {
+  const head = Buffer.alloc(1000, 0)
+  const content = randomBytes(500)
   const { file, handle } = await tempFd(1500)
-  const client = fakeClient([noiDung])
+  const client = fakeClient([content])
 
   await downloadToFile(client, fakeMessage(), handle.fd, { offset: 1000 })
 
   await handle.close()
   const onDisk = await fs.readFile(file)
-  assert.deepEqual(onDisk.subarray(0, 1000), dau)
-  assert.deepEqual(onDisk.subarray(1000), noiDung)
+  assert.deepEqual(onDisk.subarray(0, 1000), head)
+  assert.deepEqual(onDisk.subarray(1000), content)
 })
 
-test('truyền media của message cho iterDownload', async () => {
+test("passes the message's media to iterDownload", async () => {
   const { handle } = await tempFd(10)
   const message = fakeMessage({ id: 'doc-abc' })
   const client = fakeClient([Buffer.alloc(10)])
@@ -73,10 +73,10 @@ test('truyền media của message cho iterDownload', async () => {
   assert.equal(client.calls[0].file, message.media)
 })
 
-test('thứ truyền cho iterDownload phải cast được thành InputFileLocation', async () => {
-  // GramJS chỉ suy ra được location từ MessageMediaDocument, không phải từ
-  // Document trần. Client giả chấp nhận mọi thứ nên không bắt được sai lệch
-  // này — phải hỏi chính getFileInfo của GramJS.
+test('whatever is passed to iterDownload must cast to an InputFileLocation', async () => {
+  // GramJS can only derive a location from a MessageMediaDocument, not from a bare
+  // Document. The fake client accepts anything, so it cannot catch this mismatch —
+  // we have to ask GramJS's own getFileInfo.
   const { handle } = await tempFd(10)
   const document = new Api.Document({
     id: bigInt(123),
@@ -99,7 +99,7 @@ test('thứ truyền cho iterDownload phải cast được thành InputFileLocat
   assert.equal(info.dcId, 2)
 })
 
-test('onProgress cộng dồn đúng tổng số byte', async () => {
+test('onProgress adds up to the right byte total', async () => {
   const { handle } = await tempFd(300)
   const client = fakeClient([Buffer.alloc(100), Buffer.alloc(100), Buffer.alloc(100)])
   const seen = []
@@ -110,35 +110,35 @@ test('onProgress cộng dồn đúng tổng số byte', async () => {
   assert.deepEqual(seen, [100, 100, 100])
 })
 
-test('báo lỗi rõ ràng khi message không có document', async () => {
+test('gives a clear error when the message has no document', async () => {
   const { handle } = await tempFd(10)
   const client = fakeClient([])
 
   await assert.rejects(
     () => downloadToFile(client, { id: 42, media: null }, handle.fd, { offset: 0 }),
-    /không chứa file/,
+    /has no file attached/,
   )
   await handle.close()
 })
 
-test('báo lỗi rõ ràng khi offset không được cung cấp', async () => {
+test('gives a clear error when offset is not supplied', async () => {
   const { handle } = await tempFd(10)
   const client = fakeClient([Buffer.alloc(10)])
 
   await assert.rejects(
     () => downloadToFile(client, fakeMessage(), handle.fd, {}),
-    /offset phải là một số hữu hạn/,
+    /offset must be a finite number/,
   )
   await handle.close()
 })
 
-test('báo lỗi rõ ràng khi offset không phải là số', async () => {
+test('gives a clear error when offset is not a number', async () => {
   const { handle } = await tempFd(10)
   const client = fakeClient([Buffer.alloc(10)])
 
   await assert.rejects(
     () => downloadToFile(client, fakeMessage(), handle.fd, { offset: 'abc' }),
-    /offset phải là một số hữu hạn/,
+    /offset must be a finite number/,
   )
   await handle.close()
 })

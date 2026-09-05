@@ -19,11 +19,11 @@ export async function downloadToFile(client, message, fd, { offset, onProgress }
   const document = message?.media?.document
 
   if (!document) {
-    throw new Error(`Message ${message?.id} không chứa file đính kèm.`)
+    throw new Error(`Message ${message?.id} has no file attached.`)
   }
 
   if (!Number.isFinite(offset)) {
-    throw new Error(`offset phải là một số hữu hạn, nhận được: ${offset}`)
+    throw new Error(`offset must be a finite number, got: ${offset}`)
   }
 
   const hash = createHash('sha256')
