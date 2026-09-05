@@ -50,18 +50,6 @@ test('exponential backoff up to the final attempt', async () => {
   assert.deepEqual(delays, [100, 200, 400, 800])
 })
 
-test('defaults to at most 5 attempts', async () => {
-  let calls = 0
-  const delays = []
-
-  await assert.rejects(
-    () => withRetry(async () => { calls += 1; throw new Error('broken') }, { sleep: fakeSleep(delays), baseDelayMs: 1 }),
-    /broken/,
-  )
-
-  assert.equal(calls, 5)
-})
-
 test('FLOOD_WAIT is honoured for exactly the seconds the server asks for', async () => {
   const delays = []
   let calls = 0
@@ -81,6 +69,57 @@ test('FLOOD_WAIT is honoured for exactly the seconds the server asks for', async
   )
 
   assert.deepEqual(delays, [42000])
+})
+
+test('the exponential backoff stops growing at 30 seconds', async () => {
+  const delays = []
+
+  await assert.rejects(
+    () => withRetry(async () => { throw new Error('permanently broken') }, {
+      attempts: 8,
+      sleep: fakeSleep(delays),
+    }),
+    /permanently broken/,
+  )
+
+  assert.deepEqual(delays, [1000, 2000, 4000, 8000, 16000, 30000, 30000])
+})
+
+test('a FLOOD_WAIT longer than the cap is still waited out in full', async () => {
+  // Capping a flood wait means asking again before the server is ready, which earns a
+  // longer ban. Only the exponential branch is capped.
+  const delays = []
+  let calls = 0
+
+  await withRetry(
+    async () => {
+      calls += 1
+      if (calls === 1) {
+        const err = new Error('A wait of 3600 seconds is required')
+        err.seconds = 3600
+        err.errorMessage = 'FLOOD_WAIT'
+        throw err
+      }
+      return 'done'
+    },
+    { sleep: fakeSleep(delays) },
+  )
+
+  assert.deepEqual(delays, [3600000])
+})
+
+test('a stalled stretch is given 8 attempts, about 90 seconds of dead air', async () => {
+  // 15 seconds was not enough to ride out a brief outage: five attempts spent 1+2+4+8.
+  let calls = 0
+  const delays = []
+
+  await assert.rejects(
+    () => withRetry(async () => { calls += 1; throw new Error('broken') }, { sleep: fakeSleep(delays) }),
+    /broken/,
+  )
+
+  assert.equal(calls, 8)
+  assert.equal(delays.reduce((a, b) => a + b, 0), 91000)
 })
 
 test('onRetry is called with the attempt number and the delay', async () => {
