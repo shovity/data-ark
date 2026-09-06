@@ -14,288 +14,225 @@ documentation and commit messages are all written in English.
 npm test        # node --test over test/**/*.test.js
 ```
 
-There is no build step and no linter. `npm test` is the whole gate.
+No build step, no linter. `npm test` is the whole gate.
 
 ## Constraints
 
 - Node 18+, pure ESM, no TypeScript, no transpilation.
-- Exactly one runtime dependency: `teleproto`. Adding a second one needs a reason
-  that survives scrutiny. It is the maintained fork of GramJS, which npm deprecated
-  in favour of it; the session string format is unchanged, so nobody logs in again.
+- Exactly one runtime dependency: `teleproto` (the maintained fork of the deprecated
+  GramJS; same session string format, so nobody logs in again). A second one needs a
+  reason that survives scrutiny.
 - Tests use the built-in `node:test` runner only.
-- Style follows the existing files: no semicolons, single quotes, two-space indent.
+- Style: no semicolons, single quotes, two-space indent.
 
 ## The rule everything else serves
 
 **Never produce wrong data silently.** A backup that cannot be restored must fail
-loudly at upload time; a restore that cannot reproduce the original bytes must
-fail rather than hand over a plausible-looking file. Several checks exist purely
-for this and must not be relaxed to make a test pass:
+loudly at upload time; a restore that cannot reproduce the original bytes must fail
+rather than hand over a plausible-looking file. These checks exist purely for that and
+must not be relaxed to make a test pass.
 
-- `parseManifest` validates the chunk *layout*, not just the total size — a correct
-  sum with individually wrong chunk sizes yields a file with a hole while every
-  per-chunk sha256 still matches.
-- `runUpload` re-stats the source file after the last chunk and refuses to send the
-  manifest if size or mtime moved, because a file rewritten mid-upload produces a
-  self-consistent manifest for a hybrid that never existed.
-- `runRestore` writes to `<target>.partial`, verifies every chunk's size and sha256
-  plus the final file length, and renames only after all of it passes.
+### Data integrity
 
-The rule also covers a transfer that stops without failing. `src/stall.js` was written for a
-GramJS bug that abandoned requests outright — its abort path compared `_currentRetries` against
-a `reconnectRetries` of Infinity and so never fired, and `_reconnect()` read a `connect()` that
-merely returned false as success. A real network cut mid-restore was reproduced this way: on
-Linux the transfer froze for eleven minutes and then recovered, on Windows the process ended
-mid-chunk without printing a line. teleproto closes both halves — `connect()` throws once its
-attempts are spent, and `_reconnect()` catches that and rejects every pending request.
+- `parseManifest` validates the chunk *layout*, not just the total size — a correct sum
+  with individually wrong chunk sizes yields a file with a hole while every per-chunk
+  sha256 still matches.
+- `runUpload` re-stats the source after the last chunk and refuses to send the manifest
+  if size or mtime moved: a file rewritten mid-upload gives a self-consistent manifest
+  for a hybrid that never existed.
+- `runRestore` writes `<target>.partial`, verifies every chunk's size and sha256 plus the
+  final length, and renames only after all of it passes.
+- Manifests and state files are both untrusted input (one from a chat, one from disk a
+  truncated write or hand edit can mangle). `parseManifest` and `planChunks` reject
+  anything that is not a whole number of bytes rather than doing arithmetic on it: a
+  string or null does not throw, it rejects for the wrong reason or spins a loop that
+  never advances until memory runs out.
+- `~/.telstore/config.json` is hand-editable, so it gets the same treatment: a stored
+  value is parsed through the same function as the flag, and a `settings` that is not an
+  object is named rather than stepped over — otherwise telstore runs on defaults while
+  the user's own choices sit there ignored.
+- The local record is the only pointer to chunks in the chat, so `runUpload` refuses a
+  `--chunk-size` that differs from the unfinished backup's own rather than starting over,
+  and `pruneStates` (keeps `MAX_STATES` most recent) names on stderr every id it drops,
+  even when the caller asked for silence.
 
-The deadline stays, because the library was never the only road here. A server that accepts a
-request and answers nothing leaves no failure for `withRetry` to see, only silence; every
-network wait carries 60 seconds of it before that counts as an error. The timer is deliberately
-not `unref`'d: it is also the handle that keeps the event loop from running dry and exiting
-without a word.
+### Stalls are failures too
 
-A session token is untrusted input in exactly that category, and it arrives through a chat.
-Authentication proves whoever made it knew the passphrase, not that they made it correctly, so
-`checkTokenBundle` runs on both sides — refusing a broken bundle on the machine that can fix it
-rather than on the one that cannot. Two details there are load-bearing and neither is obvious.
-`Buffer.from(s, 'base64url')` **silently drops every character outside the alphabet**:
-`'abc!!!def'` decodes to four bytes and re-encodes to `'abcdeQ'`, so a token mangled in transit
-would decrypt to garbage, fail its tag check, and be reported as a wrong passphrase — the wrong
-diagnosis, arrived at quietly. Re-encoding and comparing is what turns that into "this was
-damaged on the way here". And AES-GCM **cannot tell a wrong key from altered bytes**; both are
-one failed tag check. The message names both possibilities, puts the likelier first, and says
-telstore will not guess, because guessing sends half the readers after the wrong thing.
+- `src/stall.js` gives every network wait 60 seconds of silence before it counts as an
+  error. A server that accepts a request and answers nothing leaves `withRetry` no failure
+  to see. The timer is deliberately not `unref`'d — it is also what keeps the event loop
+  from running dry and exiting without a word.
+- Measured per part, never per slice: a link delivering slowly is a link that works, and
+  killing it would turn a slow restore into a failed one. One 512KB part slower than 60s
+  means under 8KB/s, which could not finish a multi-gigabyte transfer anyway.
+- teleproto closes the other half (`connect()` throws once its attempts are spent, and
+  `_reconnect()` rejects every pending request), but the deadline stays: the library was
+  never the only road to a transfer that stops without failing.
 
-The token's scrypt parameters are pinned to its `tls1.` prefix and never carried inside it: a
-token from a chat must not get to decide how much memory this machine allocates, and an
-embedded `N` of 2^30 is a denial of service that needs no passphrase at all. `maxmem` is spelled
-out because Node's own default is 32MB and would refuse `N = 2^16` outright, as an error that
-reads like a bug in telstore. The passphrase is normalized to NFC on both sides: macOS and Linux
-spell the same accented passphrase with different bytes, and the other spelling is simply a
-different key.
+### Session tokens
 
-An empty passphrase produces `tls0.`, a genuinely different format, and `login` then writes the
-ordinary plaintext config. **The config file never lies about whether the secret is protected** —
-a blob that looked encrypted and was not would be the same silent wrongness as everything above.
-For the same reason a config holding both `sealed` and a plain `session` is refused: two sources
-of truth for one account, and nothing to say which was meant.
+- A token arrives through a chat, so `checkTokenBundle` runs on **both** sides — refusing a
+  broken bundle on the machine that can fix it rather than the one that cannot.
+- `Buffer.from(s, 'base64url')` **silently drops characters outside the alphabet**
+  (`'abc!!!def'` → four bytes → `'abcdeQ'`). Re-encoding and comparing is what turns "wrong
+  passphrase" into "this was damaged on the way here".
+- AES-GCM **cannot tell a wrong key from altered bytes**; both are one failed tag check. The
+  message names both, likelier first, and says telstore will not guess.
+- scrypt parameters are pinned to the `tls1.` prefix, never carried inside the token: an
+  embedded `N` of 2^30 is a denial of service needing no passphrase. `maxmem` is spelled out
+  because Node's 32MB default would refuse `N = 2^16` as an error that reads like our bug.
+- The passphrase is NFC-normalized on both sides: macOS and Linux spell the same accented
+  passphrase with different bytes, and the other spelling is simply a different key.
+- An empty passphrase produces `tls0.`, a genuinely different format, and `login` writes the
+  ordinary plaintext config. **The config never lies about whether the secret is protected.**
+  A config holding both `sealed` and a plain `session` is refused: two sources of truth for
+  one account, nothing to say which was meant.
 
-Manifests and state files are both untrusted input — one is downloaded from a chat, the
-other is JSON on disk that a truncated write or a hand edit can mangle — so neither is
-believed before its numbers are checked. `parseManifest` and `planChunks` reject anything
-that is not a whole number of bytes rather than doing arithmetic on it: a string or a null
-does not throw, it produces a comparison that rejects for the wrong reason, or a loop that
-never advances and spins until the process runs out of memory.
+### `delete`
 
-The same rule covers the local record of a backup, because losing it strands chunks in the
-chat that nothing can point at any more: `runUpload` refuses a `--chunk-size` that differs
-from the unfinished backup's own rather than starting over, and `pruneStates` — which keeps
-only the `MAX_STATES` most recent records — names on stderr every backup id it drops, even
-when the caller asked for silence.
+The one command that destroys data on purpose, so the rule runs the other way: nothing
+removed that the user did not ask for, nothing reported gone that is still there.
 
-`delete` is the one command that destroys data on purpose, so the rule runs the other way
-for it: nothing may be removed that the user did not ask for, and nothing may be reported
-gone that is still there. Three things follow, and none of them is decoration.
-
-The chunks go first and the manifest goes last, because the manifest is the only list of the
-message ids. Removing it first and then losing the connection strands every remaining chunk
-with nothing able to name it again — exactly the mess `delete` exists to clean up. Leaving it
-until last means an interrupted delete is finished by running the same command again, since
-Telegram says nothing about an id that is already gone. The visible cost is a window where
-`list` still shows a backup that `restore` will refuse: loud and fixable, which is the trade
-this project always takes. The local record goes last of all, after the chat is clean, for
-the same reason — where there is no manifest it *is* the only list.
-
-`delete` does not go through `parseManifest`. That function validates the chunk *layout*
-because `restore` writes bytes at offsets computed from it, and a manifest that fails those
-checks is precisely the broken backup somebody is trying to remove; refusing to read it would
-leave the only way out through the Telegram app. What `delete` needs instead is the one field
-`parseManifest` never checks, so `manifestMessageIds` checks it and nothing else: a `msgId`
-that is not a whole positive number refuses the *whole* manifest rather than deleting the ids
-around it, because a message id is the name of something about to be destroyed for good, and
-that is the one number nobody may guess at. A manifest whose body names a different backup is
-refused for the same reason — a file renamed in the chat would otherwise have telstore destroy
-another backup's chunks while reporting this one.
-
-`src/client.js` batches the ids itself rather than handing all of them to teleproto at once.
-Its `deleteMessages` splits them into hundreds and fires every batch through
-`Promise.all`, which would put a hundred requests in flight with none of them under
-`withRetry` or the stall deadline. Its peer resolution and its choice between
-`channels.DeleteMessages` and `messages.DeleteMessages` are still what telstore calls, because
-that choice is exactly what a fake client would never catch us getting wrong.
-
-That refusal keys off the *source* of the size, not its presence. A `chunkSize` in the config
-file says what to use when nobody asks for anything, so a resumed backup quietly keeps its own
-size; only `--chunk-size` on the command line is somebody asking, and only that is refused.
-`resolveSettings` returns a `source(key)` for exactly this, and it throws on a key it does not
-know rather than returning `undefined` — a typo there would turn the refusal into a silent
-resume at the wrong size. `~/.telstore/config.json` is hand-editable now that `config` invites
-people into it, so it belongs with the manifests and state files above: a stored value is
-parsed through the same function as the flag, and a `settings` that is not an object is named
-rather than stepped over, because every lookup below it would otherwise return `undefined` and
-telstore would run on defaults while the user's own choices sat there ignored.
+- Chunks first, manifest last, local record last of all — the manifest is the only list of
+  message ids, so removing it first strands every remaining chunk unnamed. Leaving it until
+  last means an interrupted delete finishes by running the command again (Telegram says
+  nothing about an id already gone). The cost is a window where `list` shows a backup
+  `restore` will refuse: loud and fixable, the trade this project always takes.
+- `delete` does not go through `parseManifest` — a manifest failing layout checks is exactly
+  the broken backup somebody is removing, and refusing to read it leaves the only way out
+  through the Telegram app. `manifestMessageIds` checks the one field `parseManifest` never
+  does: a `msgId` that is not a whole positive number refuses the *whole* manifest, because a
+  message id names something about to be destroyed for good. A manifest whose body names a
+  different backup is refused for the same reason.
+- `src/client.js` batches ids itself: teleproto's `deleteMessages` splits them into hundreds
+  and fires every batch through `Promise.all` — a hundred requests in flight under neither
+  `withRetry` nor the stall deadline. Its peer resolution and its choice between
+  `channels.DeleteMessages` and `messages.DeleteMessages` are still what telstore calls,
+  because that choice is what a fake client would never catch us getting wrong.
 
 ## Module boundaries
 
-`src/uploader.js` and `src/downloader.js` know about byte ranges and Telegram's
-part APIs; they must not mention CLI flags like `--chunk-size` in their errors.
-
-`src/downloader.js` fetches a chunk as 8MB slices through a pool of concurrent
-`iterDownload` streams, because one stream is one request at a time and that caps a restore
-at round-trip latency — about 3 MB/s — however much bandwidth is going spare. Bytes
-therefore land out of order, so the chunk's sha256 is taken by reading the assembled range
-back off disk once every slice is in. That check is about assembly, not media: the read may
-be served from the page cache.
-
-`src/commands/*.js` own the user-facing narrative. `src/caption.js`, `src/chat.js`,
-`src/chunking.js`, `src/manifest.js`, `src/progress.js`, `src/retry.js`, `src/settings.js`,
-`src/stall.js`, `src/state.js`, `src/token.js`, `src/session.js` and `src/config.js` are pure
-enough to test without a client.
-
-`connect` in `src/client.js` is the one door a session goes through, which is why opening a
-sealed one lives there and not in the commands: eight copies of "how a session is unlocked" is
-eight things to keep in step, and a ninth command would simply forget. `src/session.js` holds
-the part that knows both config shapes — `unlockConfig` and `assertLoggedIn` both — so
-`client.js` stays about Telegram. `assertLoggedIn` sat beside `connect` once, and that alone
-was why `token`, which never opens a socket, loaded the whole of teleproto.
-
-`bin/telstore.js` imports each command inside its own `switch` arm rather than at the top.
-Nine static imports meant every run paid for teleproto — about 0.4s and 50MB — including
-`--help`, `config`, `logout` and `token`, none of which touch the network; those now start in
-0.06s. `src/cli.js` stays a static import because every run parses its arguments. Nothing in
-the suite would notice a static import creeping back in — the CLI would simply get slower —
-so `test/bin.test.js` runs the binary under `NODE_V8_COVERAGE` and counts the teleproto
-scripts V8 says were executed, which must be none.
-
-`src/confirm.js` holds the y/N prompt `restore` and `delete` both ask through, and
-`findManifestMessage` lives in `src/client.js` rather than in either command, because two
-copies of "how telstore finds a manifest" is how the two of them start disagreeing about
-which file is the manifest.
-
-`--token` is a third flag with no setting behind it, and it takes **no value**. A token written
-on the command line sits in `ps` for the whole life of the command and stays in the shell
-history of a machine the user does not trust, so it is pasted at a prompt that does not echo it.
-`login` refuses a positional argument rather than ignoring one — ignoring it would leave the
-token in that history for nothing.
-
-`--yes` and `--out` are the two flags with no setting behind them, and for the same kind of
-reason: neither is a preference. `--out` names where one restore goes, and `--yes` is the
-answer to a question asked about one particular backup. Stored in the config it would become
-standing permission never to ask again before destroying one.
-
-`src/settings.js` is the one place that knows a setting exists: its flag, its default, how it
-parses and how it prints. `config`, `cli.js`'s help and every command read it, so a default
-has one definition rather than three — two definitions is how a `config` command starts lying
-about what will actually happen. Precedence is flag, then the stored setting, then the
-built-in default; **flags never write**, and the `config` command is the only thing that does.
-
-Upload and download carry their own concurrency because the same number means different things
-to each: upload counts 512KB parts, download counts 8MB slices. One value shared between them
-would hold sixteen times as much in flight on a restore as on an upload, and each slot raises
-the bandwidth a link must sustain for a batch's last request to arrive inside the 60-second
-stall deadline — 32 upload slots need 2.1 Mbps, 64 need 4.4. That floor is why the upload
-default is 32 rather than the 64 that measured marginally faster: a slow link would be told
-its transfer stalled when it was merely slow, which is the one thing that deadline must never
-say. `src/chunking.js` carries the measurements behind both numbers.
-
-The boundary rule extends to whose fault an error is. A value that will not parse is reported
-against where it came from — `Invalid --upload-concurrency: "0"` for a flag, `Invalid
-uploadConcurrency in ~/.telstore/config.json: "0"` for a stored one — because naming a flag
-nobody typed sends the reader after the wrong thing. The same reasoning killed the old resume
-message: *"run again without `--to`"* is no help to someone whose destination came from the
-config, so it names the chat to pass instead, which is right whatever the source. `runStatus`
-is the exception that proves the rule: it is what someone runs *because* something is already
-wrong, so a setting it cannot parse is printed in its own row rather than thrown, leaving the
-account line and the unfinished backups readable.
-
-`src/caption.js` also owns the shape of what the chat shows. Captions are plain text:
-no parse mode, so no file name ever has to be escaped. The `#telstore` tag lives on the
-manifest alone — `list` searches for it, and a chunk carrying it would turn one backup
-into thirteen hits.
-
-Commands take their collaborators through a `deps` object so tests can pass fakes;
-keep that seam rather than importing the real client directly.
+- `src/uploader.js` and `src/downloader.js` know byte ranges and Telegram's part APIs; they
+  must not mention CLI flags like `--chunk-size` in their errors.
+- `src/downloader.js` fetches a chunk as 8MB slices through a pool of concurrent
+  `iterDownload` streams — one stream is one request at a time, capping a restore at
+  round-trip latency (~3 MB/s). Bytes land out of order, so the chunk's sha256 is taken by
+  reading the assembled range back off disk. That check is about assembly, not media: the
+  read may be served from the page cache.
+- `src/commands/*.js` own the user-facing narrative. `caption.js`, `chat.js`, `chunking.js`,
+  `manifest.js`, `progress.js`, `retry.js`, `settings.js`, `stall.js`, `state.js`, `token.js`,
+  `session.js`, `config.js` are pure enough to test without a client.
+- `connect` in `src/client.js` is the one door a session goes through, which is why opening a
+  sealed one lives there and not in eight (soon nine) commands. `src/session.js` holds what
+  knows both config shapes — `unlockConfig` and `assertLoggedIn` — so `client.js` stays about
+  Telegram; `assertLoggedIn` beside `connect` was why `token` loaded all of teleproto.
+- `src/confirm.js` holds the y/N prompt `restore` and `delete` share, and
+  `findManifestMessage` lives in `src/client.js` rather than either command — two copies of
+  "how telstore finds a manifest" is how they start disagreeing about which file it is.
+- `bin/telstore.js` imports each command inside its own `switch` arm. Nine static imports made
+  every run pay for teleproto (~0.4s, 50MB) including `--help`, `config`, `logout` and `token`;
+  those now start in 0.06s. `src/cli.js` stays static because every run parses arguments.
+  Nothing in the suite would notice a static import creeping back, so `test/bin.test.js` runs
+  the binary under `NODE_V8_COVERAGE` and counts executed teleproto scripts — must be zero.
+- `src/settings.js` is the one place that knows a setting exists: flag, default, parsing,
+  printing. Precedence is flag, stored setting, built-in default; **flags never write**, and
+  `config` is the only thing that does. Two definitions of a default is how `config` starts
+  lying about what will actually happen.
+- Three flags have no setting behind them, none of them a preference: `--out` names where one
+  restore goes, `--yes` answers a question about one particular backup (stored, it would be
+  standing permission never to ask before destroying one), and `--token` takes **no value** —
+  a token on the command line sits in `ps` and in shell history, so it is pasted at a prompt
+  that does not echo. `login` refuses a positional argument rather than ignoring one.
+- The `--chunk-size` refusal keys off the *source* of the size, not its presence: a config
+  `chunkSize` says what to use when nobody asks, so a resumed backup keeps its own size; only
+  the flag is somebody asking. `resolveSettings` returns `source(key)` for this, and throws on
+  an unknown key rather than returning `undefined` — a typo would turn the refusal into a
+  silent resume at the wrong size.
+- Upload and download carry separate concurrency: upload counts 512KB parts, download counts
+  8MB slices, so one shared value would hold sixteen times as much in flight on a restore.
+  Each slot also raises the bandwidth needed for a batch's last request to arrive inside the
+  60s deadline — 32 upload slots need 2.1 Mbps, 64 need 4.4. That floor is why the upload
+  default is 32 and not the 64 that measured marginally faster: a slow link must never be told
+  it stalled. `src/chunking.js` carries the measurements.
+- Errors are reported against where the value came from: `Invalid --upload-concurrency: "0"`
+  for a flag, `Invalid uploadConcurrency in ~/.telstore/config.json: "0"` for a stored one.
+  Same reasoning killed *"run again without `--to`"* — useless to someone whose destination
+  came from the config, so the message names the chat to pass instead. `runStatus` is the
+  exception: it is run *because* something is wrong, so an unparseable setting is printed in
+  its own row rather than thrown, leaving the account line and unfinished backups readable.
+- `src/caption.js` owns what the chat shows. Captions are plain text — no parse mode, so no
+  file name is ever escaped. `#telstore` lives on the manifest alone: `list` searches for it,
+  and a chunk carrying it would turn one backup into thirteen hits.
+- Commands take collaborators through a `deps` object so tests can pass fakes; keep that seam
+  rather than importing the real client directly.
 
 ## What the test suite cannot see
 
-Every automated test talks to a fake client that accepts whatever it is given, so
-the suite cannot catch a mismatch with teleproto's real API surface. This has bitten
-twice. First `downloadToFile` passed `message.media.document` where the library needs
-`message.media`, and 142 tests stayed green while restore was completely broken in a
-published release. Then the move off GramJS changed `iterDownload` from one options
-object to `(file, params)`, and 459 tests stayed green against a call the real client
-refuses outright — caught only by a test that drives the real `iterDownload`, which is
-now what `test/downloader.test.js` does with the network stubbed and nothing else.
+Every automated test talks to a fake client that accepts whatever it is given, so the suite
+cannot catch a mismatch with teleproto's real API surface. This has bitten twice, most
+recently when the GramJS move changed `iterDownload` to `(file, params)`: 459 tests stayed
+green against a call the real client refuses outright, and the time before that a published
+release shipped a restore that was completely broken. Caught only by driving the real
+`iterDownload` — which is what `test/downloader.test.js` now does, with the network stubbed
+and nothing else.
 
-A fabricated error shape is the same blindness wearing different clothes. `test/retry.test.js`
-built its flood errors by hand, and under GramJS no real error ever looked like them: every
-flood error carried the literal `errorMessage` "FLOOD", so `floodWaitSeconds` matched nothing
-and each `FLOOD_WAIT` was retried on the ordinary backoff — asking again inside a ban that was
-still running, which is how a ban gets longer. teleproto's `RPCMessageToError` keeps the
-server's own string, and `floodWaitSeconds` now reads the code and the seconds rather than the
-spelling. `test/smoke-import.test.js` holds the two together with an error built the way
-`MTProtoSender` builds one.
+**A fabricated error shape is the same blindness.** `test/retry.test.js` built flood errors by
+hand; under GramJS every real flood error carried the literal `errorMessage` "FLOOD", so
+`floodWaitSeconds` matched nothing and each `FLOOD_WAIT` was retried on the ordinary backoff —
+asking again inside a running ban, which is how a ban gets longer. teleproto's
+`RPCMessageToError` keeps the server's string, and `floodWaitSeconds` reads the code and the
+seconds rather than the spelling. `test/smoke-import.test.js` holds the two together with an
+error built the way `MTProtoSender` builds one.
 
-The same blindness applies to terminals, and it cost time here. `src/prompt.js` was first
-written to open a readline per question, and its tests passed against a fake stream that takes
-turns perfectly well. A real pty does not: the first interface keeps the listener, so a second
-question reaches end-of-input having read nothing and reports it as Ctrl-D. One interface asks
-every question in a conversation, with a curtain in front of its output, and `terminal` follows
-`stdin.isTTY` — that flag is what stops the tty driver echoing on its own, which is what leaves
-the curtain as the only thing between the keyboard and the screen. Verify any change here under
-a real pty (`( sleep 1.5; echo secret ) | script -qec "node bin/telstore.js token" /dev/null`),
-pacing the input like a human: lines that arrive before the prompt exists are echoed by the tty
-and then dropped, which looks exactly like a bug in the code and is not.
+**Terminals too.** `src/prompt.js` first opened a readline per question and passed against a
+fake stream; a real pty does not take turns — the first interface keeps the listener, so a
+second question reads nothing and reports Ctrl-D. One interface asks every question, with a
+curtain in front of its output, and `terminal` follows `stdin.isTTY` (that flag is what stops
+the tty driver echoing, leaving the curtain as the only thing between keyboard and screen).
+The curtain also draws the mask, because a prompt showing nothing reads as the hang this
+project refuses everywhere: the count comes from `rl.line`, the public property — overriding
+`_writeToOutput` looks right and is not, since Node's internals have called a symbol-keyed
+method since well before 22. One asterisk per character, capped to the question's line with a
+trailing `…`; the cap is load-bearing, since the redraw is `\x1b[2K\r` plus the whole line and
+a wrapped mask would leave stale asterisks on the rows above.
 
-The curtain is also what draws the mask, because a prompt that shows nothing at all reads as the
-hang this project refuses everywhere else. Every echo readline makes is a write arriving at the
-curtain, so the count comes from `rl.line` — the public property — and not from the string being
-swallowed; overriding `_writeToOutput` looks like the way to do this and is not, since Node's own
-internals have called a symbol-keyed method since well before 22 and the override would simply
-never run. The mask is one asterisk per character, capped to the line the question sits on with a
-trailing `…`, and the cap is load-bearing: the redraw is `\x1b[2K\r` and the whole line, which
-clears one line only, so a mask that wrapped would leave stale asterisks on the rows above. The
-pty check above now also confirms that asterisks appear as the line is typed, that they come back
-when a character is erased, and that the secret itself never does.
+Verify any prompt change under a real pty, pacing input like a human — lines arriving before
+the prompt exists are echoed by the tty and dropped, which looks exactly like a bug and is not:
 
-When you touch code that hands an object to teleproto, assert against teleproto's own
-helper (as `test/downloader.test.js` does with `getFileInfo` and `iterDownload`) rather
-than against the fake, and exercise both threshold branches against a real account before
-releasing — upload and restore a file large enough to need several chunks above
-10MB, plus one below it, and compare sha256 both ways.
+```bash
+( sleep 1.5; echo secret ) | script -qec "node bin/telstore.js token" /dev/null
+```
+
+Check asterisks appear as the line is typed, come back when a character is erased, and that
+the secret never does.
+
+When you touch code that hands an object to teleproto, assert against teleproto's own helper
+(as `test/downloader.test.js` does with `getFileInfo` and `iterDownload`) rather than the fake,
+and exercise both threshold branches against a real account before releasing: upload and
+restore a file large enough to need several chunks above 10MB, plus one below it, comparing
+sha256 both ways.
 
 ## Telegram limits worth remembering
 
-- 512KB parts, at most 4000 per file → an arithmetic ceiling near 1953MB, so
-  `MAX_CHUNK_SIZE` is 1950MB and the default chunk is 1800MB.
-- `MAX_CHUNKS` is 10000, counted before the plan is built. Every chunk is one message in the
-  chat and one entry in the manifest, so a longer plan describes a backup nobody could use —
-  and the only way to ask for one is a chunk size picked by mistake, where building it first
-  would mean an out-of-memory crash instead of an answer.
-- Files above 10MB must use `SaveBigFilePart` / `InputFileBig`; at or below that,
-  `SaveFilePart` / `InputFile`. Both branches need real-account coverage.
-- `FLOOD_WAIT` is honoured for exactly the seconds the server asks for, and any
-  wait over a minute is announced so the user does not read it as a hang.
-- Retries are announced from the third one onward, not the first: a multi-gigabyte transfer
-  throws off a handful of `-503`s that each recover on the next try, and one line apiece
-  buries the progress bar. Two exceptions are announced immediately — a wait longer than a
-  minute (`FLOOD_WAIT`), and an attempt that itself took longer than a minute to fail, which
-  has already left the bar frozen for that minute and so reads exactly like the hang
-  `src/stall.js` exists to end. `withRetry` passes `onRetry` the failed attempt's own
-  duration so the commands can tell those apart.
-- A stalled request is not a failed one, and only the second is something `withRetry` can
-  see. `src/stall.js` gives every network wait 60 seconds of silence before it counts as an
-  error — one 512KB part slower than that means under 8KB/s, which could not finish a
-  multi-gigabyte transfer anyway. Measured per part, never per slice: a link delivering
-  slowly is a link that works, and killing it would turn a slow restore into a failed one.
-- `src/retry.js` governs both upload and download with the same policy: 8 attempts,
-  the exponential branch capped at 30s because past that point doubling again buys
-  nothing — the far side has either recovered or is not coming back on this attempt,
-  and an uncapped eighth attempt would mean a two-minute stare at a frozen bar.
-  `FLOOD_WAIT` is the one exception to the cap: it is still waited out in full for
-  exactly the seconds the server names, because guessing short would just draw
-  another `FLOOD_WAIT`. The backoff itself adds up to 91 seconds (1 + 2 + 4 + 8 + 16 + 30 +
-  30), and with the stall deadline spending up to a minute on each of the eight attempts an
-  outage of roughly nine minutes is survived — announced once a minute throughout, so it
-  never reads as a hang — before the transfer gives up and fails loudly.
+- 512KB parts, at most 4000 per file → a ceiling near 1953MB, so `MAX_CHUNK_SIZE` is 1950MB
+  and the default chunk is 1800MB.
+- `MAX_CHUNKS` is 10000, counted **before** the plan is built. Every chunk is one message and
+  one manifest entry, so a longer plan describes a backup nobody could use — and the only way
+  to ask for one is a chunk size picked by mistake, where building it first would mean an
+  out-of-memory crash instead of an answer.
+- Above 10MB: `SaveBigFilePart` / `InputFileBig`; at or below: `SaveFilePart` / `InputFile`.
+  Both branches need real-account coverage.
+- `FLOOD_WAIT` is honoured for exactly the seconds the server asks for.
+- `src/retry.js` governs upload and download alike: 8 attempts, exponential branch capped at
+  30s (past that, doubling buys nothing — the far side has recovered or is not coming back —
+  and an uncapped eighth attempt means a two-minute stare at a frozen bar). `FLOOD_WAIT` is
+  the one exception to the cap: waited out in full, because guessing short just draws another.
+  The backoff totals 91s (1+2+4+8+16+30+30), and with up to a minute of stall deadline on each
+  of the eight attempts an outage of roughly nine minutes is survived — announced once a
+  minute throughout, so it never reads as a hang — before failing loudly.
+- Retries are announced from the third onward: a multi-gigabyte transfer throws off a handful
+  of `-503`s that recover on the next try, and one line apiece buries the progress bar. Two
+  exceptions are announced immediately — a wait over a minute, and an attempt that itself took
+  over a minute to fail, which has already left the bar frozen and reads exactly like the hang
+  `src/stall.js` exists to end. `withRetry` passes `onRetry` the attempt's own duration so the
+  commands can tell those apart.
