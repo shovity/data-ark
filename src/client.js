@@ -3,8 +3,6 @@ import { Logger } from 'telegram/extensions/index.js'
 import { LogLevel } from 'telegram/extensions/Logger.js'
 import { StringSession } from 'telegram/sessions/index.js'
 
-import { normalizeChatTarget } from './chat.js'
-
 // GramJS narrates its version, every connection and every disconnect at info level, and
 // those timestamped lines land in the middle of the progress bar. The client reads this
 // logger before it prints anything, so LogLevel.NONE silences all of it; --verbose asks
@@ -50,19 +48,6 @@ export async function closeQuietly(client, disconnect, onWarn) {
   } catch (err) {
     if (onWarn) onWarn(err)
   }
-}
-
-export function requireChat(options, config) {
-  const raw = options.to ?? config.defaultChat
-
-  if (!raw) {
-    throw new Error(
-      'No destination set — run again with --to @my_backups (or --to me for Saved Messages). ' +
-        'data-ark will remember it next time.',
-    )
-  }
-
-  return normalizeChatTarget(raw)
 }
 
 export function assertLoggedIn(config) {

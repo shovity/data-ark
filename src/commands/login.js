@@ -7,6 +7,7 @@ import { StringSession } from 'telegram/sessions/index.js'
 import { loadConfig, saveConfig, defaultConfigDir } from '../config.js'
 import { normalizeChatTarget } from '../chat.js'
 import { createLogger } from '../client.js'
+import { resolveSettings } from '../settings.js'
 
 function createPrompts() {
   const rl = readline.createInterface({ input: stdin, output: stdout })
@@ -51,6 +52,8 @@ export async function runLogin({
   log = (line) => console.log(line),
 } = {}) {
   const config = await loadConfig(configDir)
+  const storedChat = config.settings?.chat
+  const loud = verbose || resolveSettings({}, config).values.verbose
 
   log('You need your own api_id and api_hash. Get them at https://my.telegram.org → API development tools.\n')
 
@@ -71,7 +74,7 @@ export async function runLogin({
 
   const client = createClient(apiId, apiHash, {
     connectionRetries: 5,
-    baseLogger: createLogger(verbose),
+    baseLogger: createLogger(loud),
   })
 
   await client.start({
@@ -87,7 +90,7 @@ export async function runLogin({
 
   const chatAnswer = (
     await prompts.ask(
-      `Which chat should backups go to? (@username, -100..., or me)${config.defaultChat ? ` [${config.defaultChat}]` : ''}, Enter to skip: `,
+      `Which chat should backups go to? (@username, -100..., or me)${storedChat ? ` [${storedChat}]` : ''}, Enter to skip: `,
     )
   ).trim()
 
@@ -96,7 +99,7 @@ export async function runLogin({
   const next = { ...config, apiId, apiHash, session }
 
   if (chatAnswer !== '') {
-    next.defaultChat = String(normalizeChatTarget(chatAnswer))
+    next.settings = { ...config.settings, chat: String(normalizeChatTarget(chatAnswer)) }
   }
 
   await saveConfig(next, configDir)

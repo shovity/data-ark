@@ -3,8 +3,9 @@ import path from 'node:path'
 import readline from 'node:readline/promises'
 import { stdin, stdout } from 'node:process'
 
-import { closeQuietly, connect as realConnect, requireChat, searchDocuments } from '../client.js'
-import { defaultConfigDir, loadConfig } from '../config.js'
+import { closeQuietly, connect as realConnect, searchDocuments } from '../client.js'
+import { configFile, defaultConfigDir, loadConfig } from '../config.js'
+import { requireChat, resolveSettings } from '../settings.js'
 import { downloadToFile } from '../downloader.js'
 import { manifestFileName, parseManifest } from '../manifest.js'
 import { createProgress, formatBytes, formatDuration } from '../progress.js'
@@ -79,7 +80,8 @@ export async function runRestore(backupId, options = {}, deps = {}) {
   } = deps
 
   const config = await loadConfig(configDir)
-  const chat = requireChat(options, config)
+  const { values: settings } = resolveSettings(options, config, { file: configFile(configDir) })
+  const chat = requireChat(settings)
   const log = silent ? () => {} : writeLog
   const warn = silent ? () => {} : writeErr
 
@@ -106,7 +108,7 @@ export async function runRestore(backupId, options = {}, deps = {}) {
     )
   }
 
-  const client = await connect(config, { verbose: options.verbose })
+  const client = await connect(config, { verbose: settings.verbose })
 
   try {
     const manifestMessage = await searchManifest(client, chat, backupId)

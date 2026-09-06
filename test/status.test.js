@@ -29,7 +29,7 @@ test('status without a login says so and never opens a connection', async () => 
 
 test('status reports the account, the destination and nothing unfinished', async () => {
   const configDir = await tempDir('status')
-  await saveConfig({ ...LOGGED_IN, defaultChat: '@my_backups' }, configDir)
+  await saveConfig({ ...LOGGED_IN, settings: { chat: '@my_backups' } }, configDir)
   const out = collect()
 
   await runStatus({}, {
@@ -62,7 +62,7 @@ test('an expired session is reported, not thrown', async () => {
 
 test('status lists each unfinished backup with how far it got', async () => {
   const configDir = await tempDir('status')
-  await saveConfig({ ...LOGGED_IN, defaultChat: '@my_backups' }, configDir)
+  await saveConfig({ ...LOGGED_IN, settings: { chat: '@my_backups' } }, configDir)
   await saveState('aaa', {
     id: 'ark-20260905-02e053',
     chat: '@my_backups',
@@ -105,9 +105,9 @@ test('the connection is closed even when getMe fails', async () => {
   assert.match(out.text(), /AUTH_KEY_UNREGISTERED/)
 })
 
-test('status --to sets the destination first, then reports it', async () => {
+test('status --to reports that destination without saving it', async () => {
   const configDir = await tempDir('status')
-  await saveConfig({ ...LOGGED_IN, defaultChat: '@old' }, configDir)
+  await saveConfig({ ...LOGGED_IN, settings: { chat: '@old' } }, configDir)
   const out = collect()
 
   await runStatus({ to: '@new' }, {
@@ -117,31 +117,50 @@ test('status --to sets the destination first, then reports it', async () => {
     disconnect: async () => {},
   })
 
-  assert.equal((await loadConfig(configDir)).defaultChat, '@new')
   assert.match(out.text(), /Destination\s+https:\/\/web\.telegram\.org\/k\/#@new/)
   assert.doesNotMatch(out.text(), /@old/)
+  assert.equal((await loadConfig(configDir)).settings.chat, '@old', 'a flag must never write')
 })
 
-test('status --to with an unusable destination writes nothing', async () => {
+test('status --to with an unusable destination is refused, not shown', async () => {
   const configDir = await tempDir('status')
-  await saveConfig({ ...LOGGED_IN, defaultChat: '@old' }, configDir)
+  await saveConfig({ ...LOGGED_IN, settings: { chat: '@old' } }, configDir)
+  const out = collect()
 
-  await assert.rejects(
-    () => runStatus({ to: '  ' }, {
-      configDir,
-      log: () => {},
-      connect: async () => fakeClient(),
-      disconnect: async () => {},
-    }),
-    /must not be empty/,
-  )
+  await runStatus({ to: '  ' }, {
+    configDir,
+    log: out.log,
+    connect: async () => fakeClient(),
+    disconnect: async () => {},
+  })
 
-  assert.equal((await loadConfig(configDir)).defaultChat, '@old')
+  assert.match(out.text(), /Destination\s+.*must not be empty/)
+  assert.equal((await loadConfig(configDir)).settings.chat, '@old')
+})
+
+// status is the one command someone runs because something is already wrong, so a setting
+// it cannot parse belongs in its own row — not in an exception that hides the account line
+// and the unfinished backups underneath it.
+test('a stored setting that cannot be parsed is reported in its row, not thrown', async () => {
+  const configDir = await tempDir('status')
+  await saveConfig({ ...LOGGED_IN, settings: { chat: 42.5 } }, configDir)
+  const out = collect()
+
+  await runStatus({}, {
+    configDir,
+    log: out.log,
+    connect: async () => fakeClient(),
+    disconnect: async () => {},
+  })
+
+  assert.match(out.text(), /Account/)
+  assert.match(out.text(), /Unfinished/)
+  assert.match(out.text(), /chat in .*config\.json/)
 })
 
 test('the destination is shown as a link that can be clicked', async () => {
   const configDir = await tempDir('status')
-  await saveConfig({ ...LOGGED_IN, defaultChat: '-5107543795' }, configDir)
+  await saveConfig({ ...LOGGED_IN, settings: { chat: '-5107543795' } }, configDir)
   await saveState('aaa', {
     id: 'ark-1',
     chat: '@my_backups',
@@ -168,7 +187,7 @@ test('the destination is shown as a link that can be clicked', async () => {
 
 test('Saved Messages is named rather than linked', async () => {
   const configDir = await tempDir('status')
-  await saveConfig({ ...LOGGED_IN, defaultChat: 'me' }, configDir)
+  await saveConfig({ ...LOGGED_IN, settings: { chat: 'me' } }, configDir)
   const out = collect()
 
   await runStatus({}, {

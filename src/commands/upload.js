@@ -4,18 +4,12 @@ import path from 'node:path'
 import { Api } from 'telegram'
 import { CustomFile } from 'telegram/client/uploads.js'
 
-import {
-  DEFAULT_CHUNK_SIZE,
-  DEFAULT_CONCURRENCY,
-  MAX_CONCURRENCY,
-  PART_SIZE,
-  parseSize,
-  planChunks,
-} from '../chunking.js'
+import { PART_SIZE, planChunks } from '../chunking.js'
 import { chunkCaption, manifestCaption } from '../caption.js'
 import { describeChat } from '../chat.js'
-import { closeQuietly, connect as realConnect, requireChat } from '../client.js'
-import { defaultConfigDir, loadConfig, saveConfig } from '../config.js'
+import { closeQuietly, connect as realConnect } from '../client.js'
+import { configFile, defaultConfigDir, loadConfig } from '../config.js'
+import { requireChat, resolveSettings } from '../settings.js'
 import {
   buildManifest,
   chunkFileName,
@@ -97,17 +91,11 @@ export async function runUpload(filePath, options = {}, deps = {}) {
   }
 
   const config = await loadConfig(configDir)
-  const chat = requireChat(options, config)
-  const requestedChunkSize = options['chunk-size'] ? parseSize(options['chunk-size']) : null
-  const concurrency = options.concurrency ? Number(options.concurrency) : DEFAULT_CONCURRENCY
-
-  if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > MAX_CONCURRENCY) {
-    throw new Error(
-      `Invalid --concurrency: "${options.concurrency}". ` +
-        `Must be an integer from 1 to ${MAX_CONCURRENCY} — each slot holds a 512KB part in RAM ` +
-        'and Telegram answers with FLOOD_WAIT if too many requests go out at once.',
-    )
-  }
+  const { values: settings, source } = resolveSettings(options, config, {
+    file: configFile(configDir),
+  })
+  const chat = requireChat(settings)
+  const concurrency = settings.concurrency
 
   const key = stateKey(absPath, stat.size, stat.mtimeMs)
 
@@ -117,18 +105,22 @@ export async function runUpload(filePath, options = {}, deps = {}) {
   // nothing can re-cut them. Carrying on at a different size would abandon every one of
   // them in the chat, where data-ark can no longer find them — so an unfinished backup
   // keeps its own chunk size, and a flag that disagrees is refused rather than obeyed.
-  if (state && requestedChunkSize !== null && requestedChunkSize !== state.chunkSize) {
+  //
+  // Only a flag is a disagreement. A configured chunkSize says what to use when nobody asks
+  // for anything, and this run asked for nothing — so the backup quietly keeps its own size
+  // rather than being refused over a preference set weeks ago for other files.
+  if (state && source('chunkSize') === 'flag' && settings.chunkSize !== state.chunkSize) {
     const file = stateFile(key, configDir)
     throw new Error(
       `This unfinished backup is cut into ${formatBytes(state.chunkSize)} chunks, but ` +
-        `--chunk-size asks for ${formatBytes(requestedChunkSize)} — the chunks already in ` +
+        `--chunk-size asks for ${formatBytes(settings.chunkSize)} — the chunks already in ` +
         `${state.chat} cannot be re-cut. Run again without --chunk-size to carry on, or delete ` +
         `${file} and run again to start a new backup, which leaves the chunks already sent ` +
         'sitting in the chat with nothing to point at them.',
     )
   }
 
-  const chunkSize = state ? state.chunkSize : (requestedChunkSize ?? DEFAULT_CHUNK_SIZE)
+  const chunkSize = state ? state.chunkSize : settings.chunkSize
 
   // A resumed upload takes its chunk size off disk, and nothing validated that file on the
   // way in. planChunks will refuse an unusable one, but its message is about chunk sizes and
@@ -145,17 +137,17 @@ export async function runUpload(filePath, options = {}, deps = {}) {
   const chunks = planChunks(stat.size, chunkSize)
   const resuming = Boolean(state)
 
+  // Naming the way back rather than a flag to drop: the destination may have come from the
+  // command line or from the stored setting, and "run again without --to" is no help to
+  // someone who never typed one. Pointing at the chat itself is right either way.
   if (resuming && state.chat !== String(chat)) {
     const file = stateFile(key, configDir)
     throw new Error(
       `This unfinished backup is going to ${state.chat}, but the current command targets ${chat} — ` +
-        `a single backup cannot be split across two destinations. Run again without --to to keep ` +
-        `sending to ${state.chat}, or delete ${file} and run again to start a new backup in ${chat}.`,
+        `a single backup cannot be split across two destinations. Run again with ` +
+        `--to ${state.chat} to carry on sending there, or delete ${file} and run again to ` +
+        `start a new backup in ${chat}.`,
     )
-  }
-
-  if (options.to) {
-    await saveConfig({ ...config, defaultChat: String(chat) }, configDir)
   }
 
   if (!resuming) {
@@ -213,7 +205,7 @@ export async function runUpload(filePath, options = {}, deps = {}) {
   log(`File   ${absPath} (${formatBytes(stat.size)}, ${chunks.length} chunks)`)
   log(`To     ${describeChat(chat)}\n`)
 
-  const client = await connect(config, { verbose: options.verbose })
+  const client = await connect(config, { verbose: settings.verbose })
 
   try {
     // Everything already in the chat is reported before the bar exists. These lines go to

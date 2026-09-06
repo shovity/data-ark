@@ -4,12 +4,10 @@ import {
   assertLoggedIn,
   closeQuietly,
   connect as realConnect,
-  requireChat,
   searchDocuments,
 } from '../client.js'
-import { defaultConfigDir, loadConfig } from '../config.js'
-
-export const DEFAULT_LIMIT = 20
+import { configFile, defaultConfigDir, loadConfig } from '../config.js'
+import { requireChat, resolveSettings } from '../settings.js'
 
 const UNKNOWN = '—'
 const GAP = '  '
@@ -75,18 +73,6 @@ function renderTable(rows) {
   ]
 }
 
-function parseLimit(raw) {
-  if (raw === undefined) return DEFAULT_LIMIT
-
-  const limit = Number(raw)
-
-  if (!Number.isInteger(limit) || limit < 1) {
-    throw new Error(`Invalid --limit: "${raw}". Must be a whole number of backups, 1 or more.`)
-  }
-
-  return limit
-}
-
 export async function runList(options = {}, deps = {}) {
   const {
     configDir = defaultConfigDir(),
@@ -96,20 +82,18 @@ export async function runList(options = {}, deps = {}) {
     log = (line) => console.log(line),
   } = deps
 
-  const limit = parseLimit(options.limit)
   const config = await loadConfig(configDir)
+  const { values: settings } = resolveSettings(options, config, { file: configFile(configDir) })
   // Ask about the login before the destination: telling someone who has never logged in
   // to pick a chat sends them off after the wrong thing.
   assertLoggedIn(config)
-  // Unlike status, --to here means "look over there", not "send there from now on":
-  // listing another chat should not quietly redirect the next upload.
-  const chat = requireChat(options, config)
+  const chat = requireChat(settings)
 
-  const client = await connect(config, { verbose: options.verbose })
+  const client = await connect(config, { verbose: settings.verbose })
 
   let found
   try {
-    found = await searchManifests(client, chat, limit)
+    found = await searchManifests(client, chat, settings.limit)
   } finally {
     await closeQuietly(client, disconnect)
   }

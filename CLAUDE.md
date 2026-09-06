@@ -61,9 +61,20 @@ never advances and spins until the process runs out of memory.
 
 The same rule covers the local record of a backup, because losing it strands chunks in the
 chat that nothing can point at any more: `runUpload` refuses a `--chunk-size` that differs
-from the unfinished backup's own (and resumes at that size when the flag is absent) rather
-than starting over, and `pruneStates` — which keeps only the `MAX_STATES` most recent
-records — names on stderr every backup id it drops, even when the caller asked for silence.
+from the unfinished backup's own rather than starting over, and `pruneStates` — which keeps
+only the `MAX_STATES` most recent records — names on stderr every backup id it drops, even
+when the caller asked for silence.
+
+That refusal keys off the *source* of the size, not its presence. A `chunkSize` in the config
+file says what to use when nobody asks for anything, so a resumed backup quietly keeps its own
+size; only `--chunk-size` on the command line is somebody asking, and only that is refused.
+`resolveSettings` returns a `source(key)` for exactly this, and it throws on a key it does not
+know rather than returning `undefined` — a typo there would turn the refusal into a silent
+resume at the wrong size. `~/.data-ark/config.json` is hand-editable now that `config` invites
+people into it, so it belongs with the manifests and state files above: a stored value is
+parsed through the same function as the flag, and a `settings` that is not an object is named
+rather than stepped over, because every lookup below it would otherwise return `undefined` and
+data-ark would run on defaults while the user's own choices sat there ignored.
 
 ## Module boundaries
 
@@ -77,9 +88,25 @@ therefore land out of order, so the chunk's sha256 is taken by reading the assem
 back off disk once every slice is in. That check is about assembly, not media: the read may
 be served from the page cache.
 
-`src/commands/*.js` own the user-facing narrative. `src/caption.js`,
-`src/chunking.js`, `src/manifest.js`, `src/progress.js`, `src/retry.js`,
+`src/commands/*.js` own the user-facing narrative. `src/caption.js`, `src/chat.js`,
+`src/chunking.js`, `src/manifest.js`, `src/progress.js`, `src/retry.js`, `src/settings.js`,
 `src/stall.js`, `src/state.js` and `src/config.js` are pure enough to test without a client.
+
+`src/settings.js` is the one place that knows a setting exists: its flag, its default, how it
+parses and how it prints. `config`, `cli.js`'s help and every command read it, so a default
+has one definition rather than three — two definitions is how a `config` command starts lying
+about what will actually happen. Precedence is flag, then the stored setting, then the
+built-in default; **flags never write**, and the `config` command is the only thing that does.
+
+The boundary rule extends to whose fault an error is. A value that will not parse is reported
+against where it came from — `Invalid --concurrency: "0"` for a flag, `Invalid concurrency in
+~/.data-ark/config.json: "0"` for a stored one — because naming a flag nobody typed sends the
+reader after the wrong thing. The same reasoning killed the old resume message: *"run again
+without `--to`"* is no help to someone whose destination came from the config, so it names the
+chat to pass instead, which is right whatever the source. `runStatus` is the exception that
+proves the rule: it is what someone runs *because* something is already wrong, so a setting it
+cannot parse is printed in its own row rather than thrown, leaving the account line and the
+unfinished backups readable.
 
 `src/caption.js` also owns the shape of what the chat shows. Captions are plain text:
 no parse mode, so no file name ever has to be escaped. The `#dataark` tag lives on the

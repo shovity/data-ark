@@ -7,7 +7,7 @@ import { LOGGED_IN, collect, tempDir } from './helpers.js'
 
 async function workspace(config = {}) {
   const configDir = await tempDir('list')
-  await saveConfig({ ...LOGGED_IN, defaultChat: '@store', ...config }, configDir)
+  await saveConfig({ ...LOGGED_IN, settings: { chat: '@store', ...config } }, configDir)
   return configDir
 }
 
@@ -114,9 +114,9 @@ test('an empty chat says so instead of printing an empty table', async () => {
   assert.doesNotMatch(out.text(), /BACKUP ID/)
 })
 
-// list answers "what is in that chat", it does not move where the next upload goes.
-// status is the command that changes the destination.
-test('--to looks somewhere else without changing the remembered destination', async () => {
+// A flag applies to this run and nothing else: listing another chat must leave the
+// configured destination exactly where it was.
+test('--to looks somewhere else without changing the configured destination', async () => {
   const configDir = await workspace()
   const out = collect()
   let asked = null
@@ -129,7 +129,7 @@ test('--to looks somewhere else without changing the remembered destination', as
   }))
 
   assert.equal(asked, '@other')
-  assert.equal((await loadConfig(configDir)).defaultChat, '@store')
+  assert.equal((await loadConfig(configDir)).settings.chat, '@store')
 })
 
 test('--limit caps how many messages the search asks for', async () => {
@@ -167,7 +167,7 @@ test('list before a login asks for the login, not for a destination', async () =
 })
 
 test('an empty Saved Messages is named, not called "me"', async () => {
-  const configDir = await workspace({ defaultChat: 'me' })
+  const configDir = await workspace({ chat: 'me' })
   const out = collect()
 
   await runList({}, deps(configDir, [], out))

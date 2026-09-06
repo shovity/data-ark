@@ -83,10 +83,10 @@ function deps(client, configDir) {
   }
 }
 
-async function tempConfig(defaultChat = '@store') {
+async function tempConfig(chat = '@store') {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'data-ark-restore-'))
   const configDir = path.join(dir, 'config')
-  await saveConfig({ apiId: 1, apiHash: 'h', session: 's', defaultChat }, configDir)
+  await saveConfig({ apiId: 1, apiHash: 'h', session: 's', settings: { chat } }, configDir)
   return { dir, configDir }
 }
 

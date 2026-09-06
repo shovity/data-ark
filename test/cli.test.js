@@ -76,12 +76,31 @@ test('status is a subcommand', () => {
   assert.equal(route(['status', '--verbose']).options.verbose, true)
 })
 
-test('--to without a file only sets the destination', () => {
-  const r = route(['--to', '@my_backups'])
-  assert.equal(r.command, 'set-destination')
-  assert.deepEqual(r.args, [])
-  assert.equal(r.options.to, '@my_backups')
-  assert.equal(route(['--to', '-1001234567890']).command, 'set-destination')
+test('--to without a file points at the command that actually saves a destination', () => {
+  assert.throws(() => route(['--to', '@my_backups']), /data-ark config chat @my_backups/)
+  assert.throws(() => route(['--to', '-1001234567890']), /data-ark config chat -1001234567890/)
+})
+
+test('--to with --help is still help, not an error', () => {
+  assert.equal(route(['--to', '@my_backups', '--help']).command, 'help')
+})
+
+test('config is a subcommand and carries its key and value as arguments', () => {
+  assert.equal(route(['config']).command, 'config')
+  assert.deepEqual(route(['config']).args, [])
+  assert.deepEqual(route(['config', 'chat']).args, ['chat'])
+  assert.deepEqual(route(['config', 'chat', '@my_backups']).args, ['chat', '@my_backups'])
+})
+
+test('a negative channel id survives as a config value, where there is no flag to join it to', () => {
+  assert.deepEqual(route(['config', 'chat', '-1001234567890']).args, ['chat', '-1001234567890'])
+})
+
+test('--unset reaches the config command', () => {
+  const r = route(['config', 'chat', '--unset'])
+  assert.equal(r.command, 'config')
+  assert.deepEqual(r.args, ['chat'])
+  assert.equal(r.options.unset, true)
 })
 
 test('--to with a file still uploads', () => {

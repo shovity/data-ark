@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import { describeLoginError, runLogin } from '../src/commands/login.js'
+import { loadConfig, saveConfig } from '../src/config.js'
 import { tempDir } from './helpers.js'
 
 test('describeLoginError explains an invalid phone number', () => {
@@ -76,4 +77,32 @@ test('runLogin shuts the client down for good, not just the socket', async () =>
   })
 
   assert.deepEqual(calls, ['start', 'destroy'])
+})
+
+test('the destination login asks for is written where the config command reads it', async () => {
+  const configDir = await tempDir('login')
+
+  await runLogin({
+    configDir,
+    prompts: fakePrompts(['1234', 'hash', '@my_backups']),
+    createClient: () => fakeClient([]),
+    log: () => {},
+  })
+
+  const config = await loadConfig(configDir)
+  assert.equal(config.settings.chat, '@my_backups')
+  assert.equal(config.session, 'saved-session')
+})
+
+// Logging in again must offer the destination already stored, or it reads as though the
+// chat had been lost and the blank answer would look like the only option.
+test('logging in again offers the destination already stored as the default', async () => {
+  const configDir = await tempDir('login')
+  await saveConfig({ settings: { chat: '@store' } }, configDir)
+  const prompts = fakePrompts(['1234', 'hash', ''])
+
+  await runLogin({ configDir, prompts, createClient: () => fakeClient([]), log: () => {} })
+
+  assert.match(prompts.asked.join('\n'), /\[@store\]/)
+  assert.equal((await loadConfig(configDir)).settings.chat, '@store')
 })

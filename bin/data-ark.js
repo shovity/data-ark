@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 import { route, HELP, interruptMessage } from '../src/cli.js'
 import { runLogin } from '../src/commands/login.js'
+import { runConfig } from '../src/commands/config.js'
 import { runList } from '../src/commands/list.js'
 import { runLogout } from '../src/commands/logout.js'
 import { runRestore } from '../src/commands/restore.js'
-import { runSetDestination } from '../src/commands/set-destination.js'
 import { runStatus } from '../src/commands/status.js'
 import { runUpload } from '../src/commands/upload.js'
 
@@ -40,7 +40,7 @@ async function main() {
       return
 
     case 'login':
-      await runLogin({ verbose: parsed.options.verbose })
+      await runLogin({ verbose: Boolean(parsed.options.verbose) })
       return
 
     case 'logout':
@@ -55,8 +55,8 @@ async function main() {
       await runStatus(parsed.options)
       return
 
-    case 'set-destination':
-      await runSetDestination(parsed.options)
+    case 'config':
+      await runConfig(parsed.args, parsed.options)
       return
 
     case 'upload':

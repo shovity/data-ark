@@ -3,19 +3,7 @@ import assert from 'node:assert/strict'
 
 import { LogLevel } from 'telegram/extensions/Logger.js'
 
-import { assertLoggedIn, createLogger, requireChat } from '../src/client.js'
-
-test('requireChat prefers --to over the config', () => {
-  assert.equal(requireChat({ to: '@new' }, { defaultChat: '@old' }), '@new')
-})
-
-test('requireChat uses the remembered destination when --to is absent', () => {
-  assert.equal(requireChat({}, { defaultChat: '@old' }), '@old')
-})
-
-test('requireChat gives directions when no destination was ever set', () => {
-  assert.throws(() => requireChat({}, {}), /--to/)
-})
+import { assertLoggedIn, createLogger } from '../src/client.js'
 
 test('assertLoggedIn throws on an empty config', () => {
   assert.throws(() => assertLoggedIn({}), /Not logged in/)

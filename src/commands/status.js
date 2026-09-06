@@ -3,9 +3,9 @@ import path from 'node:path'
 import { countChunks } from '../chunking.js'
 import { describeChat } from '../chat.js'
 import { assertLoggedIn, closeQuietly, connect as realConnect } from '../client.js'
-import { defaultConfigDir, loadConfig } from '../config.js'
-import { runSetDestination } from './set-destination.js'
+import { configFile, defaultConfigDir, loadConfig } from '../config.js'
 import { formatBytes } from '../progress.js'
+import { resolveSettings } from '../settings.js'
 import { listStates } from '../state.js'
 
 const LABEL_WIDTH = 'Destination'.length + 2
@@ -24,7 +24,7 @@ function describeAccount(me) {
 // The account line is the only part that needs Telegram, and it is also the only part that
 // can fail. Whatever it costs, it must not take the rest of the report down with it: the
 // unfinished backups are exactly what someone runs status to see after a session expires.
-async function accountLine(config, options, deps) {
+async function accountLine(config, verbose, deps) {
   const { connect, disconnect } = deps
 
   try {
@@ -35,7 +35,7 @@ async function accountLine(config, options, deps) {
 
   let client
   try {
-    client = await connect(config, { verbose: options.verbose })
+    client = await connect(config, { verbose })
   } catch (err) {
     return err.message
   }
@@ -57,21 +57,29 @@ export async function runStatus(options = {}, deps = {}) {
     log = (line) => console.log(line),
   } = deps
 
-  // `status --to @chan` reads as one request: point somewhere new, then show me where I am.
-  // Setting it first is also what makes the Destination line below tell the current truth.
-  if (options.to) {
-    await runSetDestination(options, { configDir, log: () => {} })
-  }
-
   const config = await loadConfig(configDir)
 
-  log(row('Account', await accountLine(config, options, { connect, disconnect })))
+  // status is what someone runs *because* something is wrong, so nothing here may take the
+  // whole report down — the same reason accountLine catches its own failures. A stored
+  // setting that will not parse is loud everywhere else; here it is loud in the row it
+  // belongs to, with the account and the unfinished backups still printed around it.
+  let settings = null
+  let settingsError = null
+
+  try {
+    settings = resolveSettings(options, config, { file: configFile(configDir) }).values
+  } catch (err) {
+    settingsError = err.message
+  }
+
+  log(row('Account', await accountLine(config, settings?.verbose ?? false, { connect, disconnect })))
   log(
     row(
       'Destination',
-      config.defaultChat
-        ? describeChat(config.defaultChat)
-        : 'none set — pass --to @my_backups to set one',
+      settingsError ??
+        (settings.chat === null
+          ? 'none set — run "npx data-ark config chat @my_backups" to set one'
+          : describeChat(settings.chat)),
     ),
   )
 

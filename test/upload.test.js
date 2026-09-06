@@ -8,6 +8,7 @@ import path from 'node:path'
 import { runUpload } from '../src/commands/upload.js'
 import { parseManifestCaption } from '../src/caption.js'
 import { parseManifest } from '../src/manifest.js'
+import { saveConfig } from '../src/config.js'
 import { loadState, stateFile, stateKey, MAX_STATES } from '../src/state.js'
 
 /**
@@ -168,7 +169,7 @@ test('the manifest is sent last and describes the chunks correctly', async () =>
   )
 })
 
-test('--to is remembered as the default destination', async () => {
+test('--to is used for this run and saves nothing', async () => {
   const ws = await tempWorkspace(400)
   const client = fakeClient()
 
@@ -178,8 +179,27 @@ test('--to is remembered as the default destination', async () => {
     { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
   )
 
-  const config = JSON.parse(await fs.readFile(path.join(ws.configDir, 'config.json'), 'utf8'))
-  assert.equal(config.defaultChat, '@new_store')
+  assert.equal(client.messages[0].peer, '@new_store')
+  await assert.rejects(
+    () => fs.readFile(path.join(ws.configDir, 'config.json'), 'utf8'),
+    { code: 'ENOENT' },
+    'an upload must not write a destination the user only borrowed for one run',
+  )
+})
+
+test('a configured destination is used when no --to is given', async () => {
+  const ws = await tempWorkspace(400)
+  const client = fakeClient()
+
+  await saveConfig({ settings: { chat: '@stored_store' } }, ws.configDir)
+
+  await runUpload(
+    ws.filePath,
+    { 'chunk-size': '400' },
+    { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
+  )
+
+  assert.equal(client.messages[0].peer, '@stored_store')
 })
 
 test('no --to and no destination ever set gives a directive error', async () => {
@@ -334,16 +354,46 @@ test('resuming with a different --to is blocked, no backup split across two dest
       }),
     (err) => {
       assert.match(err.message, /@other_store/)
-      assert.match(err.message, /--to/)
+      assert.match(err.message, /--to @store/, 'the way back is the chat itself, not a flag to drop')
       assert.match(err.message, /\.json/)
       return true
     },
   )
 
   assert.equal(retry.messages.length, 0, 'nothing may be sent once the run is blocked')
+})
 
-  const config = JSON.parse(await fs.readFile(path.join(ws.configDir, 'config.json'), 'utf8'))
-  assert.equal(config.defaultChat, '@store', 'the default destination must not be overwritten when blocked')
+// The advice in that message has to work for someone who never typed a flag: the mismatch
+// is just as reachable from a configured destination, and "run again without --to" would
+// leave them with nothing to drop.
+test('a configured destination that disagrees with the backup is blocked the same way', async () => {
+  const ws = await tempWorkspace(1000)
+
+  const failing = fakeClient({ failOnChunk: 1 })
+  await assert.rejects(() =>
+    runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
+      ...deps(failing),
+      configDir: ws.configDir,
+      partSize: 128,
+      silent: true,
+    }),
+  )
+
+  await saveConfig({ settings: { chat: '@other_store' } }, ws.configDir)
+
+  const retry = fakeClient()
+  await assert.rejects(
+    () =>
+      runUpload(ws.filePath, {}, {
+        ...deps(retry),
+        configDir: ws.configDir,
+        partSize: 128,
+        silent: true,
+      }),
+    /--to @store/,
+  )
+
+  assert.equal(retry.messages.length, 0)
 })
 
 test('an unfinished backup resumes with the chunk size it started with', async () => {
@@ -415,6 +465,75 @@ test('changing --chunk-size on an unfinished backup is refused, not silently res
 
   assert.equal(retry.messages.length, 0, 'nothing may be sent once the run is blocked')
   assert.deepEqual(await loadState(key, ws.configDir), before, 'the unfinished backup stays intact')
+})
+
+// A stored chunkSize is what to use when nobody asks for anything; it is not somebody
+// asking. Refusing to resume over a preference set weeks ago for other files would strand
+// the chunks already in the chat, which is the exact outcome the refusal exists to prevent.
+test('a configured chunk size lets an unfinished backup carry on at its own size', async () => {
+  const ws = await tempWorkspace(1000)
+
+  const failing = fakeClient({ failOnChunk: 1 })
+  await assert.rejects(() =>
+    runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
+      ...deps(failing),
+      configDir: ws.configDir,
+      partSize: 128,
+      silent: true,
+    }),
+  )
+
+  const stat = await fs.stat(ws.filePath)
+  const key = stateKey(path.resolve(ws.filePath), stat.size, stat.mtimeMs)
+  const firstRunId = (await loadState(key, ws.configDir)).id
+
+  await saveConfig({ settings: { chat: '@store', chunkSize: 250 } }, ws.configDir)
+
+  const retry = fakeClient()
+  const result = await runUpload(ws.filePath, {}, {
+    ...deps(retry),
+    configDir: ws.configDir,
+    partSize: 128,
+    silent: true,
+  })
+
+  assert.equal(result.id, firstRunId, 'the same backup must carry on')
+  assert.equal(result.chunks, 3, 'at 400 bytes a chunk, the size it started with')
+
+  const chunkMessages = retry.messages.filter((m) => !m.fileName.endsWith('.manifest.json'))
+  assert.equal(chunkMessages.length, 2, 'the chunk that already landed is not sent twice')
+})
+
+// ...but the same value typed on the command line is a request, and a request that cannot
+// be honoured is refused rather than quietly ignored.
+test('the same disagreement typed as a flag is still refused', async () => {
+  const ws = await tempWorkspace(1000)
+
+  const failing = fakeClient({ failOnChunk: 1 })
+  await assert.rejects(() =>
+    runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
+      ...deps(failing),
+      configDir: ws.configDir,
+      partSize: 128,
+      silent: true,
+    }),
+  )
+
+  await saveConfig({ settings: { chat: '@store', chunkSize: 250 } }, ws.configDir)
+
+  const retry = fakeClient()
+  await assert.rejects(
+    () =>
+      runUpload(ws.filePath, { 'chunk-size': '250' }, {
+        ...deps(retry),
+        configDir: ws.configDir,
+        partSize: 128,
+        silent: true,
+      }),
+    /--chunk-size/,
+  )
+
+  assert.equal(retry.messages.length, 0)
 })
 
 test('the chunk size the backup started with may be repeated on the command line', async () => {

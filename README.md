@@ -6,11 +6,12 @@ Split large files into 1.8GB chunks, store them on Telegram, and restore them in
 
 ```bash
 npx data-ark login                        # once only
-npx data-ark data.tar --to @my_backups    # the destination is remembered
-npx data-ark --to @my_backups             # only change the destination, upload nothing
+npx data-ark config chat @my_backups      # where backups go, from now on
+npx data-ark data.tar                     # split it and send it there
+npx data-ark data.tar --to @somewhere     # somewhere else, this run only
+npx data-ark config                       # every setting and where its value comes from
 npx data-ark status                       # account, destination, unfinished backups
 npx data-ark list                         # what is already stored in the destination
-npx data-ark data.tar                     # from the second run on
 npx data-ark restore ark-20260905-7f3a91
 ```
 
@@ -21,16 +22,33 @@ npx data-ark restore ark-20260905-7f3a91
 
 data-ark signs in with your own Telegram account (MTProto), not a bot. That is a hard requirement: the Bot API caps uploads at 50MB per file, while a user account gets 2GB.
 
-## Options
+## Settings and flags
 
-| Flag | Default | Meaning |
-|---|---|---|
-| `--to <chat>` | the remembered destination | `@username`, `-100123…`, or `me`. `upload` and `status` remember it; `list` and `restore` only look there. A negative channel id works either way: `--to -100123…` or `--to=-100123…` |
-| `--chunk-size <n>` | `1800MB` | e.g. `1.8GB`, `500MB`. Hard ceiling 1950MB. An unfinished backup keeps the size it started with. |
-| `--concurrency <n>` | `8` | 512KB parts sent in parallel. An integer from 1 to 64. `upload` only — `restore` downloads through its own fixed pool of workers and does not read this flag. |
-| `--out <path>` | the basename from the manifest | Where to write the restored file; relative paths resolve against the current directory |
-| `--limit <n>` | `20` | How many backups `list` shows, newest first |
-| `--verbose` | off | Show the Telegram client's own connection logs, hidden by default so they do not break up the progress bar |
+There are two ways to say what data-ark should do, and they never overlap. **`config` writes;
+flags do not.** A flag applies to the run you typed it on and changes nothing on disk, so
+`--to @elsewhere` sends one backup elsewhere without moving the destination for the next one.
+
+```bash
+npx data-ark config                       # everything, and whether it is yours or a default
+npx data-ark config chat                  # one value, bare, ready to pipe
+npx data-ark config chunkSize 500MB       # change it for good
+npx data-ark config chunkSize --unset     # back to the default
+```
+
+| Setting | Flag | Default | Meaning |
+|---|---|---|---|
+| `chat` | `--to` | none | `@username`, `-100123…`, or `me`. A negative channel id works with a space or an `=`, as a flag or as a config value. |
+| `chunkSize` | `--chunk-size` | `1800MB` | e.g. `1.8GB`, `500MB`. Hard ceiling 1950MB. An unfinished backup keeps the size it started with. |
+| `concurrency` | `--concurrency` | `8` | 512KB parts sent in parallel. An integer from 1 to 64. Upload only — `restore` downloads through its own fixed pool of workers. |
+| `limit` | `--limit` | `20` | How many backups `list` shows, newest first |
+| `verbose` | `--verbose` | off | Show the Telegram client's own connection logs, hidden by default so they do not break up the progress bar |
+
+`--out <path>` has no setting: it names where one particular restore should write, and
+defaults to the basename in the manifest. Relative paths resolve against the current directory.
+
+`config` reads and writes only settings — the `api_id`, `api_hash` and session that `login`
+stores in the same file are not reachable from it. A value is checked before it is written,
+so `config chunkSize 9GB` is refused there and then rather than at the start of a long upload.
 
 ## What the chat looks like
 
@@ -63,8 +81,6 @@ ark-20260901-9de447  photos.zip  940.3 MB       1  2026-09-01
 
 A backup uploaded before the card existed still gets a row, with dashes where the caption
 says nothing — `list` reports what the chat holds and never fills gaps with guesses.
-`--to` here only chooses which chat to look at; it does not move the destination the way
-`status --to` does.
 
 ## How it works
 
@@ -72,9 +88,9 @@ Every run mints a `backupId`. The file is read directly by offset — no tempora
 
 If the connection drops during an **upload**, just run the same command again — progress lives in `~/.data-ark/state/` and finished chunks are skipped, keeping the same `backupId`. Two things to know about rerunning:
 
-- Running again with a `--to` that differs from the destination stored in the unfinished progress makes data-ark **refuse to run** rather than silently redirect — one backup cannot be split across two destinations. The error points the way out: drop `--to` to keep sending to the original destination, or delete the state file to start a new backup.
-- Running again **without** `--chunk-size` resumes at the size the backup started with, whatever the default is today.
-- Running again **with** a `--chunk-size` that differs from that size makes data-ark **refuse to run**, for the same reason as `--to`: the chunks already in the chat were cut that way and cannot be re-cut. Drop the flag to carry on, or delete the state file to start a new backup — which leaves the chunks already sent in the chat with nothing pointing at them.
+- Running again against a destination that differs from the one in the unfinished progress makes data-ark **refuse to run** rather than silently redirect — one backup cannot be split across two destinations. The error names the chat to pass as `--to` to carry on, or the state file to delete to start a new backup. It reads the same whether the mismatch came from a flag or from your configured `chat`.
+- Running again **without** `--chunk-size` resumes at the size the backup started with, whatever your configured `chunkSize` says today. A setting is what to use when nobody asks for anything; it is not somebody asking.
+- Running again **with** a `--chunk-size` that differs from that size makes data-ark **refuse to run**: the chunks already in the chat were cut that way and cannot be re-cut. Drop the flag to carry on, or delete the state file to start a new backup — which leaves the chunks already sent in the chat with nothing pointing at them.
 
 `Ctrl-C` during an upload names the backup it was working on, so `data-ark status` and a later `restore` have something to go on. data-ark keeps the **20 most recent** unfinished backups in `~/.data-ark/state/`; starting a new one past that drops the oldest record and says which id it dropped. Only the local record goes — the chunks that backup sent stay in the chat, searchable by that id, but it can no longer be resumed.
 
@@ -89,4 +105,17 @@ If the connection drops during an **upload**, just run the same command again �
 
 ## Where the config lives
 
-`~/.data-ark/config.json` (mode 600) holds `apiId`, `apiHash`, the session and the default destination. `npx data-ark logout` **only deletes the locally stored session** and keeps the rest — the session is still alive on Telegram's side. To revoke access for good, open Telegram → Settings → Devices (Active sessions) and terminate that session.
+`~/.data-ark/config.json` (mode 600) holds `apiId`, `apiHash` and the session at the top level, with everything `config` manages under `settings`:
+
+```json
+{
+  "apiId": 123456,
+  "apiHash": "…",
+  "session": "…",
+  "settings": { "chat": "@my_backups", "chunkSize": 524288000 }
+}
+```
+
+Editing it by hand is fine, and a value that cannot be used is named on the next run — with the file and the key, never with a flag you did not type.
+
+`npx data-ark logout` **only deletes the locally stored session** and keeps the rest — the session is still alive on Telegram's side. To revoke access for good, open Telegram → Settings → Devices (Active sessions) and terminate that session.

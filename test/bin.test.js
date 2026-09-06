@@ -119,3 +119,36 @@ test('list without a login gives a short error, not a stack trace', async () => 
     await fs.rm(home, { recursive: true, force: true })
   }
 })
+
+// config is the one command whose entire job is a file write, and every unit test injects
+// configDir. This is the only place the real path, the real argv and the real exit codes
+// are exercised together.
+test('config writes a setting and reads it back through the real argv', async () => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'data-ark-config-bin-'))
+
+  try {
+    const env = { ...process.env, HOME: home }
+
+    const set = await run(process.execPath, [BIN, 'config', 'chat', '-1001234567890'], { env })
+    assert.match(set.stdout, /chat = -1001234567890/)
+
+    const get = await run(process.execPath, [BIN, 'config', 'chat'], { env })
+    assert.equal(get.stdout.trim(), '-1001234567890')
+
+    const list = await run(process.execPath, [BIN, 'config'], { env })
+    assert.match(list.stdout, /concurrency\s+8\s+\(default\)/)
+
+    const stored = JSON.parse(await fs.readFile(path.join(home, '.data-ark', 'config.json'), 'utf8'))
+    assert.deepEqual(stored, { settings: { chat: -1001234567890 } })
+  } finally {
+    await fs.rm(home, { recursive: true, force: true })
+  }
+})
+
+test('--to with nothing to upload names the command that saves a destination', async () => {
+  const { code, stderr } = await runCli(['--to', '@my_backups'])
+
+  assert.equal(code, 2)
+  assert.match(stderr, /data-ark config chat @my_backups/)
+  assert.doesNotMatch(stderr, /at .*\.js:\d+/)
+})
