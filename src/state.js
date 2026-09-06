@@ -96,6 +96,10 @@ export async function pruneStates(configDir = defaultConfigDir(), keep = MAX_STA
 // status needs every unfinished backup at once. A state file that cannot be read is skipped
 // rather than fatal, for the same reason loadState returns null: one corrupt file must not
 // hide the other backups still waiting to be finished.
+//
+// The key comes back alongside each record because canResume needs it, and the file name is
+// the only place it survives: the record's own path, size and mtime are exactly what a
+// rewritten file makes stale, so recomputing the key from them would always say yes.
 export async function listStates(configDir = defaultConfigDir()) {
   let names
   try {
@@ -110,8 +114,10 @@ export async function listStates(configDir = defaultConfigDir()) {
   for (const name of names) {
     if (!name.endsWith('.json')) continue
 
-    const state = await loadState(name.slice(0, -'.json'.length), configDir)
-    if (state) states.push(state)
+    const key = name.slice(0, -'.json'.length)
+    const state = await loadState(key, configDir)
+
+    if (state) states.push({ key, state })
   }
 
   return states
@@ -148,4 +154,29 @@ export async function findStates(backupId, configDir = defaultConfigDir()) {
   }
 
   return found
+}
+
+// Whether a record can still be resumed, which is not a question about the record alone:
+// runUpload hashes the file it finds on disk and looks the result up, so a backup is
+// resumable exactly when that hash is still the key this record is filed under. Recomputing
+// through stateKey rather than comparing size and mtime by hand is the point — a second way
+// of asking is a second way to drift, and status would end up promising a resume that upload
+// turns into a brand new backup, stranding every chunk already sent.
+//
+// Never throws. status calls this for every record it prints, and one damaged path must not
+// take the rest of the report down with it.
+export async function canResume(key, state) {
+  let stat
+
+  try {
+    stat = await fs.stat(state.path)
+  } catch (err) {
+    if (err.code === 'ENOENT') return { ok: false, reason: 'missing' }
+    return { ok: false, reason: 'unreadable' }
+  }
+
+  if (!stat.isFile()) return { ok: false, reason: 'not-a-file' }
+  if (stateKey(state.path, stat.size, stat.mtimeMs) !== key) return { ok: false, reason: 'changed' }
+
+  return { ok: true }
 }

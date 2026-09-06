@@ -1,9 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { promises as fs } from 'node:fs'
+import path from 'node:path'
 
 import { runStatus } from '../src/commands/status.js'
 import { loadConfig, saveConfig } from '../src/config.js'
-import { saveState } from '../src/state.js'
+import { saveState, stateKey } from '../src/state.js'
 
 import { LOGGED_IN, collect, tempDir } from './helpers.js'
 
@@ -85,7 +87,7 @@ test('status lists each unfinished backup with how far it got', async () => {
   assert.match(text, /telstore-20260905-02e053/)
   assert.match(text, /data\.tar/)
   // 100 bytes in 40-byte chunks is three chunks, two of them already sent.
-  assert.match(text, /2\/3/)
+  assert.match(text, /Chunks\s+2 of 3 uploaded/)
 })
 
 test('the connection is closed even when getMe fails', async () => {
@@ -198,4 +200,152 @@ test('Saved Messages is named rather than linked', async () => {
   })
 
   assert.match(out.text(), /Destination\s+me \(Saved Messages\)/)
+})
+
+// An unfinished backup is resumed by running the same upload command again, and the record
+// is found by hashing the file's path, size and mtime — so these tests file each record
+// under the key a real file on disk actually produces, the way runUpload would.
+async function saveResumable(configDir, { name = 'data.tar', body = 'hello', ...rest } = {}) {
+  const dir = await tempDir('source')
+  const file = path.join(dir, name)
+  await fs.writeFile(file, body)
+  const stat = await fs.stat(file)
+
+  const state = {
+    id: 'telstore-20260905-02e053',
+    chat: '@my_backups',
+    path: file,
+    size: stat.size,
+    mtimeMs: stat.mtimeMs,
+    chunkSize: 40,
+    done: {},
+    ...rest,
+  }
+
+  await saveState(stateKey(file, stat.size, stat.mtimeMs), state, configDir)
+
+  return file
+}
+
+async function report(configDir, options = {}) {
+  const out = collect()
+
+  await runStatus(options, {
+    configDir,
+    log: out.log,
+    connect: async () => fakeClient(),
+    disconnect: async () => {},
+  })
+
+  return out.text()
+}
+
+// The old report printed only the basename, which is the one thing that cannot be pasted
+// back: the record is keyed on the absolute path, so a resume typed from `data.tar` alone
+// starts a second backup and abandons the chunks the first one already sent.
+test('a resumable backup is shown with the command that resumes it', async () => {
+  const configDir = await tempDir('status')
+  await saveConfig({ ...LOGGED_IN, settings: { chat: '@my_backups' } }, configDir)
+  const file = await saveResumable(configDir)
+
+  const text = await report(configDir)
+
+  assert.match(text, new RegExp(`File\\s+${file}`))
+  assert.match(text, new RegExp(`Resume\\s+npx telstore ${file}$`, 'm'))
+})
+
+// Sending the rest of a backup somewhere else is what runUpload refuses outright, so the
+// command status prints has to name the chat the chunks are already in.
+test('the resume command carries --to when the backup goes somewhere else', async () => {
+  const configDir = await tempDir('status')
+  await saveConfig({ ...LOGGED_IN, settings: { chat: '@elsewhere' } }, configDir)
+  const file = await saveResumable(configDir, { chat: '@my_backups' })
+
+  const text = await report(configDir)
+
+  assert.match(text, new RegExp(`Resume\\s+npx telstore ${file} --to @my_backups$`, 'm'))
+})
+
+test('the resume command leaves out --to when the destination already matches', async () => {
+  const configDir = await tempDir('status')
+  await saveConfig({ ...LOGGED_IN, settings: { chat: '@my_backups' } }, configDir)
+  await saveResumable(configDir, { chat: '@my_backups' })
+
+  assert.doesNotMatch(await report(configDir), /--to/)
+})
+
+// With no destination to compare against there is no way to know the chat still matches,
+// and a command that leaves --to out would be a guess about where the chunks went.
+test('the resume command carries --to when the destination cannot be read', async () => {
+  const configDir = await tempDir('status')
+  await saveConfig({ ...LOGGED_IN, settings: { chat: 42.5 } }, configDir)
+  await saveResumable(configDir, { chat: '@my_backups' })
+
+  assert.match(await report(configDir), /Resume\s+npx telstore .* --to @my_backups$/m)
+})
+
+test('a path with a space in it is quoted so the command can be pasted', async () => {
+  const configDir = await tempDir('status')
+  await saveConfig({ ...LOGGED_IN, settings: { chat: '@my_backups' } }, configDir)
+  const file = await saveResumable(configDir, { name: 'my data.tar' })
+
+  assert.match(await report(configDir), new RegExp(`Resume\\s+npx telstore '${file}'$`, 'm'))
+})
+
+// Printing the command anyway would be telling the user to run something that quietly
+// starts a second backup: the key hashes the mtime, so upload would never find this record.
+test('a backup whose file has changed says so instead of offering a command', async () => {
+  const configDir = await tempDir('status')
+  await saveConfig({ ...LOGGED_IN, settings: { chat: '@my_backups' } }, configDir)
+  const file = await saveResumable(configDir, { done: { 0: {}, 1: {} } })
+  await fs.writeFile(file, 'rewritten, and longer than before')
+
+  const text = await report(configDir)
+
+  assert.doesNotMatch(text, /npx telstore/)
+  assert.match(text, /Resume\s+not possible: the file has changed/)
+  // Two chunks are sitting in the chat with nothing left to point at them.
+  assert.match(text, /2 chunks are already in the chat/)
+})
+
+test('a backup whose file is gone says that, not that it changed', async () => {
+  const configDir = await tempDir('status')
+  await saveConfig({ ...LOGGED_IN, settings: { chat: '@my_backups' } }, configDir)
+  const file = await saveResumable(configDir)
+  await fs.unlink(file)
+
+  assert.match(await report(configDir), /Resume\s+not possible: the file is no longer there/)
+})
+
+// Nothing was stranded, so there is nothing to go looking for in the chat.
+test('an unresumable backup that never sent a chunk mentions no stranded chunks', async () => {
+  const configDir = await tempDir('status')
+  await saveConfig({ ...LOGGED_IN, settings: { chat: '@my_backups' } }, configDir)
+  const file = await saveResumable(configDir)
+  await fs.unlink(file)
+
+  assert.doesNotMatch(await report(configDir), /already in the chat/)
+})
+
+// The same reason accountLine catches its own failures: one bad record must not swallow
+// the report that someone ran status to read.
+test('a record with a damaged path does not hide the backup after it', async () => {
+  const configDir = await tempDir('status')
+  await saveConfig({ ...LOGGED_IN, settings: { chat: '@my_backups' } }, configDir)
+  await saveState('aaa', {
+    id: 'telstore-damaged',
+    chat: '@my_backups',
+    path: null,
+    size: 100,
+    mtimeMs: 1,
+    chunkSize: 40,
+    done: {},
+  }, configDir)
+  await saveResumable(configDir, { id: 'telstore-fine' })
+
+  const text = await report(configDir)
+
+  assert.match(text, /telstore-damaged/)
+  assert.match(text, /telstore-fine/)
+  assert.match(text, /Resume\s+npx telstore /)
 })

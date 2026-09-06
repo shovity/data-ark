@@ -15,6 +15,7 @@ import {
   pruneStates,
   MAX_STATES,
   findStates,
+  canResume,
 } from '../src/state.js'
 
 async function tempDir() {
@@ -117,8 +118,21 @@ test('listStates returns every unfinished backup and skips unreadable files', as
   const states = await listStates(dir)
 
   assert.deepEqual(
-    states.map((s) => s.id).sort(),
+    states.map(({ state }) => state.id).sort(),
     ['telstore-1', 'telstore-2'],
+  )
+})
+
+// canResume answers by recomputing the key and comparing it with the one the record is
+// filed under, so the caller needs that key — and only the file name has it, since the
+// record's own numbers are what a rewritten file makes stale.
+test('listStates hands back the key each record is filed under', async () => {
+  const dir = await tempDir()
+  await saveState('aaa', sampleState({ id: 'telstore-1' }), dir)
+
+  assert.deepEqual(
+    (await listStates(dir)).map(({ key }) => key),
+    ['aaa'],
   )
 })
 
@@ -143,7 +157,7 @@ test('pruneStates keeps the newest states and drops the older ones', async () =>
   await pruneStates(dir, 2)
 
   const left = await listStates(dir)
-  assert.deepEqual(left.map((s) => s.id).sort(), ['telstore-mid', 'telstore-new'])
+  assert.deepEqual(left.map(({ state }) => state.id).sort(), ['telstore-mid', 'telstore-new'])
 })
 
 test('pruneStates names the backups it dropped', async () => {
@@ -230,4 +244,68 @@ test('findStates skips a state file that cannot be read instead of failing', asy
 
 test('findStates on a machine that has never run an upload finds nothing', async () => {
   assert.deepEqual(await findStates('telstore-wanted', await tempDir()), [])
+})
+
+// A record is filed under a key hashed from the file's path, size and mtime, and runUpload
+// looks a resume up by hashing the file it finds on disk. canResume answers whether those
+// two hashes still agree, so a helper builds a record from a file that really exists.
+async function recordFor(dir, name = 'data.tar', body = 'hello') {
+  const file = path.join(dir, name)
+  await fs.writeFile(file, body)
+  const stat = await fs.stat(file)
+  const state = sampleState({ path: file, size: stat.size, mtimeMs: stat.mtimeMs })
+
+  return { file, state, key: stateKey(file, stat.size, stat.mtimeMs) }
+}
+
+test('canResume accepts a file that still matches the record it is filed under', async () => {
+  const dir = await tempDir()
+  const { state, key } = await recordFor(dir)
+
+  assert.deepEqual(await canResume(key, state), { ok: true })
+})
+
+test('canResume refuses a file that has been rewritten since the backup started', async () => {
+  const dir = await tempDir()
+  const { file, state, key } = await recordFor(dir)
+  await fs.writeFile(file, 'hello again, longer this time')
+
+  assert.deepEqual(await canResume(key, state), { ok: false, reason: 'changed' })
+})
+
+// Same bytes, later mtime: the size alone would call this resumable, but stateKey hashes
+// the mtime too, so runUpload would file it under a new key and start a second backup.
+test('canResume refuses a file touched since the backup started, size unchanged', async () => {
+  const dir = await tempDir()
+  const { file, state, key } = await recordFor(dir)
+  const later = new Date(Date.now() + 60_000)
+  await fs.utimes(file, later, later)
+
+  assert.deepEqual(await canResume(key, state), { ok: false, reason: 'changed' })
+})
+
+test('canResume refuses a file that is no longer there', async () => {
+  const dir = await tempDir()
+  const { file, state, key } = await recordFor(dir)
+  await fs.unlink(file)
+
+  assert.deepEqual(await canResume(key, state), { ok: false, reason: 'missing' })
+})
+
+test('canResume refuses a path that is no longer a file', async () => {
+  const dir = await tempDir()
+  const { file, state, key } = await recordFor(dir)
+  await fs.unlink(file)
+  await fs.mkdir(file)
+
+  assert.deepEqual(await canResume(key, state), { ok: false, reason: 'not-a-file' })
+})
+
+// A state file is untrusted input, and a hand-edited path that is not a string makes
+// fs.stat throw a type error rather than ENOENT. status calls this for every record it
+// prints, so it must come back with an answer instead of taking the report down.
+test('canResume refuses a damaged path rather than throwing', async () => {
+  const state = sampleState({ path: null })
+
+  assert.deepEqual(await canResume('k1', state), { ok: false, reason: 'unreadable' })
 })
