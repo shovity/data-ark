@@ -54,7 +54,7 @@ test('every file named on the command line becomes its own backup', async () => 
 
   const { results, failed } = await runUploads(
     ws.paths,
-    { to: '@store', 'chunk-size': '400', 'upload-concurrency': '2', yes: true },
+    { chat: '@store', 'chunk-size': '400', 'upload-concurrency': '2', yes: true },
     { ...uploadDeps(client), configDir: ws.configDir, partSize: 128, silent: true },
   )
 
@@ -81,7 +81,7 @@ test('a batch opens one connection and closes it once', async () => {
 
   await runUploads(
     ws.paths,
-    { to: '@store', 'chunk-size': '400', yes: true },
+    { chat: '@store', 'chunk-size': '400', yes: true },
     {
       ...uploadDeps(client),
       connect: async () => {
@@ -108,7 +108,7 @@ test('one file behaves exactly as a single upload, summary and all', async () =>
 
   const { results, failed } = await runUploads(
     ws.paths,
-    { to: '@store', 'chunk-size': '400' },
+    { chat: '@store', 'chunk-size': '400' },
     { ...uploadDeps(client), configDir: ws.configDir, partSize: 128, log: out.log },
   )
 
@@ -124,7 +124,7 @@ test('a file that fails does not stop the ones named after it', async () => {
 
   const { results, failed } = await runUploads(
     ws.paths,
-    { to: '@store', 'chunk-size': '400', yes: true },
+    { chat: '@store', 'chunk-size': '400', yes: true },
     { ...failSendAt(client, 2), configDir: ws.configDir, partSize: 128, silent: true },
   )
 
@@ -146,7 +146,7 @@ test('the summary names every file in the order they were given', async () => {
 
   const { results } = await runUploads(
     ws.paths,
-    { to: '@store', 'chunk-size': '400', yes: true },
+    { chat: '@store', 'chunk-size': '400', yes: true },
     { ...failSendAt(client, 2), configDir: ws.configDir, partSize: 128, log: out.log },
   )
 
@@ -170,7 +170,7 @@ test('a batch where everything failed does not offer a restore command', async (
 
   const { failed } = await runUploads(
     ws.paths,
-    { to: '@store', 'chunk-size': '400', yes: true },
+    { chat: '@store', 'chunk-size': '400', yes: true },
     { ...failSendAt(client, 1, 2), configDir: ws.configDir, partSize: 128, log: out.log },
   )
 
@@ -187,7 +187,7 @@ test('a file named twice is refused before anything is sent', async () => {
     () =>
       runUploads(
         [ws.paths[0], ws.paths[1], ws.paths[0]],
-        { to: '@store', 'chunk-size': '400' },
+        { chat: '@store', 'chunk-size': '400' },
         { ...uploadDeps(client), configDir: ws.configDir, partSize: 128, silent: true },
       ),
     (err) => {
@@ -209,7 +209,7 @@ test('a path that does not exist stops the batch before the first byte goes out'
     () =>
       runUploads(
         [ws.paths[0], missing, ws.paths[1]],
-        { to: '@store', 'chunk-size': '400' },
+        { chat: '@store', 'chunk-size': '400' },
         { ...uploadDeps(client), configDir: ws.configDir, partSize: 128, silent: true },
       ),
     new RegExp(`File does not exist: ${missing}`),
@@ -228,7 +228,7 @@ test('a folder named alongside one of its own files is refused as a duplicate', 
     () =>
       runUploads(
         [ws.paths[0], ws.dir],
-        { to: '@store', 'chunk-size': '400' },
+        { chat: '@store', 'chunk-size': '400' },
         { ...uploadDeps(client), configDir: ws.configDir, partSize: 128, silent: true },
       ),
     /named twice/,
@@ -263,7 +263,7 @@ test('a batch with no login is refused once, before any backup record is written
 
   await assert.rejects(
     () =>
-      runUploads(ws.paths, { to: '@store', 'chunk-size': '400' }, {
+      runUploads(ws.paths, { chat: '@store', 'chunk-size': '400' }, {
         ...uploadDeps(client),
         connect: async () => {
           connects += 1
@@ -290,7 +290,7 @@ test('a file that fails is named as soon as it fails, not only in the summary', 
 
   await runUploads(
     ws.paths,
-    { to: '@store', 'chunk-size': '400', yes: true },
+    { chat: '@store', 'chunk-size': '400', yes: true },
     {
       ...failSendAt(client, 2),
       configDir: ws.configDir,
@@ -317,7 +317,7 @@ test('a folder is uploaded as the files inside it, one backup each', async () =>
 
   const { results, failed } = await runUploads(
     [ws.dir],
-    { to: '@store', 'chunk-size': '400', yes: true },
+    { chat: '@store', 'chunk-size': '400', yes: true },
     { ...uploadDeps(client), configDir: ws.configDir, partSize: 128, silent: true },
   )
 
@@ -335,7 +335,7 @@ test('a folder telstore did not walk into is named on stderr, not passed over', 
 
   await runUploads(
     [ws.dir],
-    { to: '@store', 'chunk-size': '400', yes: true },
+    { chat: '@store', 'chunk-size': '400', yes: true },
     {
       ...uploadDeps(client),
       configDir: ws.configDir,
@@ -356,7 +356,7 @@ test('a pattern that reached telstore intact is expanded the same way', async ()
 
   const { results } = await runUploads(
     [path.join(ws.dir, '*.tar')],
-    { to: '@store', 'chunk-size': '400', yes: true },
+    { chat: '@store', 'chunk-size': '400', yes: true },
     { ...uploadDeps(client), configDir: ws.configDir, partSize: 128, silent: true },
   )
 
@@ -373,7 +373,7 @@ test('a folder holding one file is a single upload, with nothing asked and no su
 
   const { results } = await runUploads(
     [ws.dir],
-    { to: '@store', 'chunk-size': '400' },
+    { chat: '@store', 'chunk-size': '400' },
     {
       ...uploadDeps(client),
       configDir: ws.configDir,
@@ -399,7 +399,7 @@ test('the question shows every file, its size and where they are going', async (
 
   await runUploads(
     ws.paths,
-    { to: '@store', 'chunk-size': '400' },
+    { chat: '@store', 'chunk-size': '400' },
     {
       ...uploadDeps(client),
       configDir: ws.configDir,
@@ -433,7 +433,7 @@ test('answering anything but yes sends nothing at all', async () => {
     () =>
       runUploads(
         ws.paths,
-        { to: '@store', 'chunk-size': '400' },
+        { chat: '@store', 'chunk-size': '400' },
         {
           ...uploadDeps(client),
           configDir: ws.configDir,
@@ -455,7 +455,7 @@ test('--yes uploads a batch without asking anything', async () => {
 
   const { failed } = await runUploads(
     ws.paths,
-    { to: '@store', 'chunk-size': '400', yes: true },
+    { chat: '@store', 'chunk-size': '400', yes: true },
     {
       ...uploadDeps(client),
       configDir: ws.configDir,
@@ -481,7 +481,7 @@ test('with no terminal to ask in, the batch stops and names the flag that goes o
     () =>
       runUploads(
         ws.paths,
-        { to: '@store', 'chunk-size': '400' },
+        { chat: '@store', 'chunk-size': '400' },
         {
           ...uploadDeps(client),
           configDir: ws.configDir,
@@ -507,7 +507,7 @@ test('a note is stamped on every backup in the batch', async () => {
 
   await runUploads(
     ws.paths,
-    { to: '@store', 'chunk-size': '400', yes: true, note: 'march archive' },
+    { chat: '@store', 'chunk-size': '400', yes: true, note: 'march archive' },
     { ...uploadDeps(client), configDir: ws.configDir, partSize: 128, silent: true },
   )
 
@@ -529,7 +529,7 @@ test('a note too long to caption refuses the whole batch', async () => {
     () =>
       runUploads(
         ws.paths,
-        { to: '@store', 'chunk-size': '400', yes: true, note: 'x'.repeat(501) },
+        { chat: '@store', 'chunk-size': '400', yes: true, note: 'x'.repeat(501) },
         { ...uploadDeps(client), configDir: ws.configDir, partSize: 128, silent: true },
       ),
     /--note is 501 characters/,
@@ -548,7 +548,7 @@ test('a missing file in a batch alongside a note names the quoting mistake', asy
     () =>
       runUploads(
         [...ws.paths, path.join(ws.dir, 'accounts')],
-        { to: '@store', 'chunk-size': '400', yes: true, note: 'quarterly' },
+        { chat: '@store', 'chunk-size': '400', yes: true, note: 'quarterly' },
         {
           ...uploadDeps(client),
           configDir: ws.configDir,

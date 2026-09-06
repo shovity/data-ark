@@ -120,7 +120,7 @@ export async function runDelete(backupId, options = {}, deps = {}) {
     if (!manifestMessage && !record) {
       throw new Error(
         `No backup ${backupId} found in ${chatName(chat)}, and no unfinished record of it on ` +
-          'this machine. Check the id with "npx telstore list", or use --to to point at the ' +
+          'this machine. Check the id with "npx telstore list", or use --chat to point at the ' +
           'right chat.',
       )
     }

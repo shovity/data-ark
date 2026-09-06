@@ -116,12 +116,12 @@ test('an empty chat says so instead of printing an empty table', async () => {
 
 // A flag applies to this run and nothing else: listing another chat must leave the
 // configured destination exactly where it was.
-test('--to looks somewhere else without changing the configured destination', async () => {
+test('--chat looks somewhere else without changing the configured destination', async () => {
   const configDir = await workspace()
   const out = collect()
   let asked = null
 
-  await runList({ to: '@other' }, deps(configDir, [], out, {
+  await runList({ chat: '@other' }, deps(configDir, [], out, {
     searchManifests: async (client, chat) => {
       asked = chat
       return []

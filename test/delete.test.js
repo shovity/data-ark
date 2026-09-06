@@ -411,13 +411,13 @@ test('a machine with no destination is told to set one', async () => {
   await assert.rejects(() => runDelete(ID, {}, deps(configDir, { rec: recorder() })), /config chat/)
 })
 
-test('--to points at another chat without changing the stored one', async () => {
+test('--chat points at another chat without changing the stored one', async () => {
   const configDir = await workspace()
   const seen = []
 
   await runDelete(
     ID,
-    { yes: true, to: '@elsewhere' },
+    { yes: true, chat: '@elsewhere' },
     deps(configDir, {
       manifest: manifestBody(),
       rec: recorder(),

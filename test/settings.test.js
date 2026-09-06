@@ -19,7 +19,7 @@ const resolve = (options, config) => resolveSettings(options, config, { file: FI
 test('a flag beats a stored setting, which beats the built-in default', () => {
   const stored = { settings: { chat: '@stored', uploadConcurrency: 4 } }
 
-  const { values, source } = resolve({ to: '@flag' }, stored)
+  const { values, source } = resolve({ chat: '@flag' }, stored)
 
   assert.equal(values.chat, '@flag')
   assert.equal(source('chat'), 'flag')
@@ -103,19 +103,19 @@ test('a stored destination is normalised the way a typed one is', () => {
 test('requireChat points at config, and offers the flag as the one-run alternative', () => {
   assert.throws(() => requireChat(resolve({}, {}).values), (err) => {
     assert.match(err.message, /telstore config chat/)
-    assert.match(err.message, /--to/)
+    assert.match(err.message, /--chat/)
     assert.doesNotMatch(err.message, /remember/)
     return true
   })
 
-  assert.equal(requireChat(resolve({ to: '@x' }, {}).values), '@x')
+  assert.equal(requireChat(resolve({ chat: '@x' }, {}).values), '@x')
 })
 
 test('the flag spelling of a key is accepted as a way in, and canonicalised', () => {
   assert.equal(canonicalKey('chunk-size'), 'chunkSize')
   assert.equal(canonicalKey('chunkSize'), 'chunkSize')
   assert.equal(canonicalKey('CHUNKSIZE'), 'chunkSize')
-  assert.equal(canonicalKey('to'), 'chat')
+  assert.equal(canonicalKey('upload-concurrency'), 'uploadConcurrency')
   assert.equal(canonicalKey('nonsense'), null)
 })
 

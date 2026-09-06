@@ -112,11 +112,11 @@ test('the listing spells a chunk size out as well as printing it exactly', async
 test('the flag spelling of a setting is accepted and canonicalised on the way in', async () => {
   const configDir = await tempDir('config')
 
-  await runConfig(['to', '@my_backups'], {}, deps(configDir, collect()))
   await runConfig(['chunk-size', '500MB'], {}, deps(configDir, collect()))
+  await runConfig(['upload-concurrency', '8'], {}, deps(configDir, collect()))
 
   const { settings } = await loadConfig(configDir)
-  assert.deepEqual(Object.keys(settings).sort(), ['chat', 'chunkSize'])
+  assert.deepEqual(Object.keys(settings).sort(), ['chunkSize', 'uploadConcurrency'])
 })
 
 // A value that cannot be used must never reach the file, or the next command fails over

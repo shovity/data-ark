@@ -193,6 +193,14 @@ removed that the user did not ask for, nothing reported gone that is still there
   printing. Precedence is flag, stored setting, built-in default; **flags never write**, and
   `config` is the only thing that does. Two definitions of a default is how `config` starts
   lying about what will actually happen.
+- A setting's flag is its key in kebab-case, without exception. `chat` used to answer to `--to`,
+  which read well on an upload and nowhere else: `restore`/`list`/`delete` do not send anything
+  to that chat, they look in it, so both their errors had to spell out that the flag "points at
+  the right chat" — a name needing a gloss is a name that failed. It also made `origin` print
+  two spellings of one setting (`Invalid --to` from a flag, `Invalid chat in <config>` from the
+  file). `--to` was removed rather than kept as an alias: `parseArgs` refuses it by name, so an
+  old script stops instead of sending a backup somewhere nobody chose, and one setting keeps one
+  name. `ALIASES` still earns its place for `chunk-size` and the two concurrencies.
 - Four flags have no setting behind them, none of them a preference: `--out` names where one
   restore goes (and is refused outright against several ids), `--yes` answers a question about
   one particular run (stored, it would be standing permission never to ask before destroying
@@ -213,7 +221,7 @@ removed that the user did not ask for, nothing reported gone that is still there
   it stalled. `src/chunking.js` carries the measurements.
 - Errors are reported against where the value came from: `Invalid --upload-concurrency: "0"`
   for a flag, `Invalid uploadConcurrency in ~/.telstore/config.json: "0"` for a stored one.
-  Same reasoning killed *"run again without `--to`"* — useless to someone whose destination
+  Same reasoning killed *"run again without `--chat`"* — useless to someone whose destination
   came from the config, so the message names the chat to pass instead. `runStatus` is the
   exception: it is run *because* something is wrong, so an unparseable setting is printed in
   its own row rather than thrown, leaving the account line and unfinished backups readable.

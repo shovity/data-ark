@@ -22,10 +22,10 @@ test('every file named after the first is kept, not dropped', () => {
 })
 
 test('flags around several files are still parsed as flags', () => {
-  const r = route(['a.tar', '--to', '@store', 'b.tar'])
+  const r = route(['a.tar', '--chat', '@store', 'b.tar'])
   assert.equal(r.command, 'upload')
   assert.deepEqual(r.args, ['a.tar', 'b.tar'])
-  assert.equal(r.options.to, '@store')
+  assert.equal(r.options.chat, '@store')
 })
 
 test('restore is recognised as a subcommand with a backup id', () => {
@@ -46,7 +46,7 @@ test('no arguments shows the help', () => {
 test('the accompanying flags are parsed', () => {
   const r = route([
     'data.tar',
-    '--to',
+    '--chat',
     '@my_backups',
     '--chunk-size',
     '1.8GB',
@@ -57,7 +57,7 @@ test('the accompanying flags are parsed', () => {
   ])
   assert.equal(r.command, 'upload')
   assert.deepEqual(r.args, ['data.tar'])
-  assert.equal(r.options.to, '@my_backups')
+  assert.equal(r.options.chat, '@my_backups')
   assert.equal(r.options['chunk-size'], '1.8GB')
   assert.equal(r.options['upload-concurrency'], '4')
   assert.equal(r.options['download-concurrency'], '2')
@@ -80,17 +80,17 @@ test('--verbose is parsed as a flag', () => {
 })
 
 test('a negative channel id is accepted separated by a space, not only with =', () => {
-  assert.equal(route(['data.tar', '--to', '-1001234567890']).options.to, '-1001234567890')
-  assert.equal(route(['data.tar', '--to=-1001234567890']).options.to, '-1001234567890')
-  assert.equal(route(['restore', 'telstore-1', '--to', '-100123']).options.to, '-100123')
+  assert.equal(route(['data.tar', '--chat', '-1001234567890']).options.chat, '-1001234567890')
+  assert.equal(route(['data.tar', '--chat=-1001234567890']).options.chat, '-1001234567890')
+  assert.equal(route(['restore', 'telstore-1', '--chat', '-100123']).options.chat, '-100123')
 })
 
-test('joining a negative value does not swallow the flag that follows --to', () => {
-  assert.throws(() => route(['data.tar', '--to', '--verbose']), { code: 'ERR_PARSE_ARGS_INVALID_OPTION_VALUE' })
+test('joining a negative value does not swallow the flag that follows --chat', () => {
+  assert.throws(() => route(['data.tar', '--chat', '--verbose']), { code: 'ERR_PARSE_ARGS_INVALID_OPTION_VALUE' })
 })
 
-test('a --to after -- stays a positional', () => {
-  assert.equal(route(['data.tar', '--', '--to', '-100123']).options.to, undefined)
+test('a --chat after -- stays a positional', () => {
+  assert.equal(route(['data.tar', '--', '--chat', '-100123']).options.chat, undefined)
 })
 
 test('status is a subcommand', () => {
@@ -100,13 +100,13 @@ test('status is a subcommand', () => {
   assert.equal(route(['status', '--verbose']).options.verbose, true)
 })
 
-test('--to without a file points at the command that actually saves a destination', () => {
-  assert.throws(() => route(['--to', '@my_backups']), /telstore config chat @my_backups/)
-  assert.throws(() => route(['--to', '-1001234567890']), /telstore config chat -1001234567890/)
+test('--chat without a file points at the command that actually saves a destination', () => {
+  assert.throws(() => route(['--chat', '@my_backups']), /telstore config chat @my_backups/)
+  assert.throws(() => route(['--chat', '-1001234567890']), /telstore config chat -1001234567890/)
 })
 
-test('--to with --help is still help, not an error', () => {
-  assert.equal(route(['--to', '@my_backups', '--help']).command, 'help')
+test('--chat with --help is still help, not an error', () => {
+  assert.equal(route(['--chat', '@my_backups', '--help']).command, 'help')
 })
 
 test('config is a subcommand and carries its key and value as arguments', () => {
@@ -127,8 +127,8 @@ test('--unset reaches the config command', () => {
   assert.equal(r.options.unset, true)
 })
 
-test('--to with a file still uploads', () => {
-  assert.equal(route(['data.tar', '--to', '@my_backups']).command, 'upload')
+test('--chat with a file still uploads', () => {
+  assert.equal(route(['data.tar', '--chat', '@my_backups']).command, 'upload')
 })
 
 test('no arguments at all is still help', () => {
@@ -143,12 +143,12 @@ test('list is a subcommand, not a file to upload', () => {
   assert.deepEqual(parsed.args, [])
 })
 
-test('list takes --limit and --to', () => {
-  const parsed = route(['list', '--limit', '5', '--to', '@store'])
+test('list takes --limit and --chat', () => {
+  const parsed = route(['list', '--limit', '5', '--chat', '@store'])
 
   assert.equal(parsed.command, 'list')
   assert.equal(parsed.options.limit, '5')
-  assert.equal(parsed.options.to, '@store')
+  assert.equal(parsed.options.chat, '@store')
 })
 
 test('interrupting an upload names the backup and how to carry on', () => {
@@ -220,10 +220,10 @@ test('--yes is a flag, present only when it was typed', () => {
 })
 
 test('delete reaches a negative channel id like every other command', () => {
-  const r = route(['delete', 'telstore-1', '--to', '-1001234567890'])
+  const r = route(['delete', 'telstore-1', '--chat', '-1001234567890'])
   assert.equal(r.command, 'delete')
   assert.deepEqual(r.args, ['telstore-1'])
-  assert.equal(r.options.to, '-1001234567890')
+  assert.equal(r.options.chat, '-1001234567890')
 })
 
 // Ctrl-C during a delete has already destroyed messages for good, and the manifest is

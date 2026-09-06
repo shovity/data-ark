@@ -28,7 +28,7 @@ test('splits the file into the right number of chunks and uploads them all', asy
 
   const result = await runUpload(
     ws.filePath,
-    { to: '@store', 'chunk-size': '400', 'upload-concurrency': '2' },
+    { chat: '@store', 'chunk-size': '400', 'upload-concurrency': '2' },
     { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
   )
 
@@ -46,7 +46,7 @@ test('chunks are named and captioned after the backup id', async () => {
 
   const result = await runUpload(
     ws.filePath,
-    { to: '@store', 'chunk-size': '400' },
+    { chat: '@store', 'chunk-size': '400' },
     { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
   )
 
@@ -61,7 +61,7 @@ test('the manifest carries the summary card someone reads in the chat', async ()
 
   const result = await runUpload(
     ws.filePath,
-    { to: '@store', 'chunk-size': '400' },
+    { chat: '@store', 'chunk-size': '400' },
     { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
   )
 
@@ -81,7 +81,7 @@ test('only the manifest carries the search tag', async () => {
 
   await runUpload(
     ws.filePath,
-    { to: '@store', 'chunk-size': '400' },
+    { chat: '@store', 'chunk-size': '400' },
     { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
   )
 
@@ -97,7 +97,7 @@ test('the manifest is sent last and describes the chunks correctly', async () =>
 
   const result = await runUpload(
     ws.filePath,
-    { to: '@store', 'chunk-size': '400' },
+    { chat: '@store', 'chunk-size': '400' },
     { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
   )
 
@@ -118,13 +118,13 @@ test('the manifest is sent last and describes the chunks correctly', async () =>
   )
 })
 
-test('--to is used for this run and saves nothing', async () => {
+test('--chat is used for this run and saves nothing', async () => {
   const ws = await tempWorkspace(400)
   const client = fakeClient()
 
   await runUpload(
     ws.filePath,
-    { to: '@new_store', 'chunk-size': '400' },
+    { chat: '@new_store', 'chunk-size': '400' },
     { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
   )
 
@@ -136,7 +136,7 @@ test('--to is used for this run and saves nothing', async () => {
   )
 })
 
-test('a configured destination is used when no --to is given', async () => {
+test('a configured destination is used when no --chat is given', async () => {
   const ws = await tempWorkspace(400)
   const client = fakeClient()
 
@@ -151,14 +151,14 @@ test('a configured destination is used when no --to is given', async () => {
   assert.equal(client.messages[0].peer, '@stored_store')
 })
 
-test('no --to and no destination ever set gives a directive error', async () => {
+test('no --chat and no destination ever set gives a directive error', async () => {
   const ws = await tempWorkspace(400)
   const client = fakeClient()
 
   await assert.rejects(
     () =>
       runUpload(ws.filePath, {}, { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true }),
-    /--to/,
+    /--chat/,
   )
 })
 
@@ -168,7 +168,7 @@ test('a nonexistent file gives a clear error', async () => {
 
   await assert.rejects(
     () =>
-      runUpload(path.join(ws.dir, 'no-such-file.tar'), { to: '@store' }, {
+      runUpload(path.join(ws.dir, 'no-such-file.tar'), { chat: '@store' }, {
         ...deps(client),
         configDir: ws.configDir,
         silent: true,
@@ -183,7 +183,7 @@ test('the state survives a mid-transfer failure', async () => {
 
   await assert.rejects(
     () =>
-      runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
+      runUpload(ws.filePath, { chat: '@store', 'chunk-size': '400' }, {
         ...deps(client),
         configDir: ws.configDir,
         partSize: 128,
@@ -205,7 +205,7 @@ test('rerunning after a failure skips finished chunks and keeps the backup id', 
 
   const failing = fakeClient({ failOnChunk: 1 })
   await assert.rejects(() =>
-    runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
+    runUpload(ws.filePath, { chat: '@store', 'chunk-size': '400' }, {
       ...deps(failing),
       configDir: ws.configDir,
       partSize: 128,
@@ -217,7 +217,7 @@ test('rerunning after a failure skips finished chunks and keeps the backup id', 
   const firstRunId = (await loadState(key, ws.configDir)).id
 
   const retry = fakeClient()
-  const result = await runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
+  const result = await runUpload(ws.filePath, { chat: '@store', 'chunk-size': '400' }, {
     ...deps(retry),
     configDir: ws.configDir,
     partSize: 128,
@@ -237,7 +237,7 @@ test('a finished upload clears the state', async () => {
   const ws = await tempWorkspace(1000)
   const client = fakeClient()
 
-  await runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
+  await runUpload(ws.filePath, { chat: '@store', 'chunk-size': '400' }, {
     ...deps(client),
     configDir: ws.configDir,
     partSize: 128,
@@ -257,7 +257,7 @@ test('a non-numeric --upload-concurrency gives a clear error', async () => {
     () =>
       runUpload(
         ws.filePath,
-        { to: '@store', 'chunk-size': '400', 'upload-concurrency': 'abc' },
+        { chat: '@store', 'chunk-size': '400', 'upload-concurrency': 'abc' },
         { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
       ),
     /--upload-concurrency/,
@@ -272,19 +272,19 @@ test('--upload-concurrency of 0 gives a clear error instead of hanging forever',
     () =>
       runUpload(
         ws.filePath,
-        { to: '@store', 'chunk-size': '400', 'upload-concurrency': '0' },
+        { chat: '@store', 'chunk-size': '400', 'upload-concurrency': '0' },
         { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
       ),
     /--upload-concurrency/,
   )
 })
 
-test('resuming with a different --to is blocked, no backup split across two destinations', async () => {
+test('resuming with a different --chat is blocked, no backup split across two destinations', async () => {
   const ws = await tempWorkspace(1000)
 
   const failing = fakeClient({ failOnChunk: 1 })
   await assert.rejects(() =>
-    runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
+    runUpload(ws.filePath, { chat: '@store', 'chunk-size': '400' }, {
       ...deps(failing),
       configDir: ws.configDir,
       partSize: 128,
@@ -295,7 +295,7 @@ test('resuming with a different --to is blocked, no backup split across two dest
   const retry = fakeClient()
   await assert.rejects(
     () =>
-      runUpload(ws.filePath, { to: '@other_store', 'chunk-size': '400' }, {
+      runUpload(ws.filePath, { chat: '@other_store', 'chunk-size': '400' }, {
         ...deps(retry),
         configDir: ws.configDir,
         partSize: 128,
@@ -303,7 +303,7 @@ test('resuming with a different --to is blocked, no backup split across two dest
       }),
     (err) => {
       assert.match(err.message, /@other_store/)
-      assert.match(err.message, /--to @store/, 'the way back is the chat itself, not a flag to drop')
+      assert.match(err.message, /--chat @store/, 'the way back is the chat itself, not a flag to drop')
       assert.match(err.message, /\.json/)
       return true
     },
@@ -313,14 +313,14 @@ test('resuming with a different --to is blocked, no backup split across two dest
 })
 
 // The advice in that message has to work for someone who never typed a flag: the mismatch
-// is just as reachable from a configured destination, and "run again without --to" would
+// is just as reachable from a configured destination, and "run again without --chat" would
 // leave them with nothing to drop.
 test('a configured destination that disagrees with the backup is blocked the same way', async () => {
   const ws = await tempWorkspace(1000)
 
   const failing = fakeClient({ failOnChunk: 1 })
   await assert.rejects(() =>
-    runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
+    runUpload(ws.filePath, { chat: '@store', 'chunk-size': '400' }, {
       ...deps(failing),
       configDir: ws.configDir,
       partSize: 128,
@@ -339,7 +339,7 @@ test('a configured destination that disagrees with the backup is blocked the sam
         partSize: 128,
         silent: true,
       }),
-    /--to @store/,
+    /--chat @store/,
   )
 
   assert.equal(retry.messages.length, 0)
@@ -350,7 +350,7 @@ test('an unfinished backup resumes with the chunk size it started with', async (
 
   const failing = fakeClient({ failOnChunk: 1 })
   await assert.rejects(() =>
-    runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
+    runUpload(ws.filePath, { chat: '@store', 'chunk-size': '400' }, {
       ...deps(failing),
       configDir: ws.configDir,
       partSize: 128,
@@ -365,7 +365,7 @@ test('an unfinished backup resumes with the chunk size it started with', async (
   // No --chunk-size this time: the default is 1800MB, which would make this one chunk
   // and throw away the chunk already in the chat.
   const retry = fakeClient()
-  const result = await runUpload(ws.filePath, { to: '@store' }, {
+  const result = await runUpload(ws.filePath, { chat: '@store' }, {
     ...deps(retry),
     configDir: ws.configDir,
     partSize: 128,
@@ -384,7 +384,7 @@ test('changing --chunk-size on an unfinished backup is refused, not silently res
 
   const failing = fakeClient({ failOnChunk: 1 })
   await assert.rejects(() =>
-    runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
+    runUpload(ws.filePath, { chat: '@store', 'chunk-size': '400' }, {
       ...deps(failing),
       configDir: ws.configDir,
       partSize: 128,
@@ -399,7 +399,7 @@ test('changing --chunk-size on an unfinished backup is refused, not silently res
   const retry = fakeClient()
   await assert.rejects(
     () =>
-      runUpload(ws.filePath, { to: '@store', 'chunk-size': '250' }, {
+      runUpload(ws.filePath, { chat: '@store', 'chunk-size': '250' }, {
         ...deps(retry),
         configDir: ws.configDir,
         partSize: 128,
@@ -424,7 +424,7 @@ test('a configured chunk size lets an unfinished backup carry on at its own size
 
   const failing = fakeClient({ failOnChunk: 1 })
   await assert.rejects(() =>
-    runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
+    runUpload(ws.filePath, { chat: '@store', 'chunk-size': '400' }, {
       ...deps(failing),
       configDir: ws.configDir,
       partSize: 128,
@@ -460,7 +460,7 @@ test('the same disagreement typed as a flag is still refused', async () => {
 
   const failing = fakeClient({ failOnChunk: 1 })
   await assert.rejects(() =>
-    runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
+    runUpload(ws.filePath, { chat: '@store', 'chunk-size': '400' }, {
       ...deps(failing),
       configDir: ws.configDir,
       partSize: 128,
@@ -490,7 +490,7 @@ test('the chunk size the backup started with may be repeated on the command line
 
   const failing = fakeClient({ failOnChunk: 1 })
   await assert.rejects(() =>
-    runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
+    runUpload(ws.filePath, { chat: '@store', 'chunk-size': '400' }, {
       ...deps(failing),
       configDir: ws.configDir,
       partSize: 128,
@@ -499,7 +499,7 @@ test('the chunk size the backup started with may be repeated on the command line
   )
 
   const retry = fakeClient()
-  const result = await runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
+  const result = await runUpload(ws.filePath, { chat: '@store', 'chunk-size': '400' }, {
     ...deps(retry),
     configDir: ws.configDir,
     partSize: 128,
@@ -516,7 +516,7 @@ test('the backup id is announced before the first chunk goes out', async () => {
 
   const result = await runUpload(
     ws.filePath,
-    { to: '@store', 'chunk-size': '400' },
+    { chat: '@store', 'chunk-size': '400' },
     {
       ...deps(client),
       configDir: ws.configDir,
@@ -534,7 +534,7 @@ test('a resumed backup announces the id it is carrying on with', async () => {
 
   const failing = fakeClient({ failOnChunk: 1 })
   await assert.rejects(() =>
-    runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
+    runUpload(ws.filePath, { chat: '@store', 'chunk-size': '400' }, {
       ...deps(failing),
       configDir: ws.configDir,
       partSize: 128,
@@ -547,7 +547,7 @@ test('a resumed backup announces the id it is carrying on with', async () => {
   const firstRunId = (await loadState(key, ws.configDir)).id
 
   const announced = []
-  await runUpload(ws.filePath, { to: '@store' }, {
+  await runUpload(ws.filePath, { chat: '@store' }, {
     ...deps(fakeClient()),
     configDir: ws.configDir,
     partSize: 128,
@@ -583,7 +583,7 @@ test('starting a new backup drops the oldest states past the limit and says whic
 
   await runUpload(
     ws.filePath,
-    { to: '@store', 'chunk-size': '400' },
+    { chat: '@store', 'chunk-size': '400' },
     {
       ...deps(fakeClient()),
       configDir: ws.configDir,
@@ -625,7 +625,7 @@ test('a file changed during the upload sends no manifest and gives a clear error
   }
 
   await assert.rejects(
-    () => runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, changeFileAfterFirstChunk),
+    () => runUpload(ws.filePath, { chat: '@store', 'chunk-size': '400' }, changeFileAfterFirstChunk),
     (err) => {
       assert.match(err.message, /changed during the upload/)
       assert.match(err.message, /cannot be trusted/)
@@ -658,7 +658,7 @@ test('an oversized --upload-concurrency is blocked instead of holding gigabytes 
     () =>
       runUpload(
         ws.filePath,
-        { to: '@store', 'chunk-size': '400', 'upload-concurrency': '4000' },
+        { chat: '@store', 'chunk-size': '400', 'upload-concurrency': '4000' },
         { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
       ),
     (err) => {
@@ -677,7 +677,7 @@ test('--upload-concurrency of exactly 64 still runs', async () => {
 
   const result = await runUpload(
     ws.filePath,
-    { to: '@store', 'chunk-size': '400', 'upload-concurrency': '64' },
+    { chat: '@store', 'chunk-size': '400', 'upload-concurrency': '64' },
     { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
   )
 
@@ -707,7 +707,7 @@ test('a long FLOOD_WAIT is announced clearly instead of hanging in silence', asy
 
   await runUpload(
     ws.filePath,
-    { to: '@store', 'chunk-size': '400' },
+    { chat: '@store', 'chunk-size': '400' },
     {
       ...deps(client),
       configDir: ws.configDir,
@@ -745,7 +745,7 @@ test('the first retries pass without a word, the third is announced', async () =
 
   await runUpload(
     ws.filePath,
-    { to: '@store', 'chunk-size': '400' },
+    { chat: '@store', 'chunk-size': '400' },
     {
       ...deps(client),
       configDir: ws.configDir,
@@ -787,7 +787,7 @@ test('an attempt that took a minute to fail is announced on the first retry', as
 
   await runUpload(
     ws.filePath,
-    { to: '@store', 'chunk-size': '400' },
+    { chat: '@store', 'chunk-size': '400' },
     {
       ...deps(client),
       configDir: ws.configDir,
@@ -823,7 +823,7 @@ test('silent prints nothing to stderr, even on a FLOOD_WAIT', async () => {
 
   await runUpload(
     ws.filePath,
-    { to: '@store', 'chunk-size': '400' },
+    { chat: '@store', 'chunk-size': '400' },
     {
       ...deps(client),
       configDir: ws.configDir,
@@ -841,7 +841,7 @@ test('upload draws one bar for the whole file, not one per chunk', async () => {
   const ws = await tempWorkspace(1000)
   const written = []
 
-  await runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
+  await runUpload(ws.filePath, { chat: '@store', 'chunk-size': '400' }, {
     ...deps(fakeClient()),
     configDir: ws.configDir,
     partSize: 128,
@@ -882,7 +882,7 @@ test('a resumed upload starts the bar where the last run stopped', async () => {
   const ws = await tempWorkspace(1000)
 
   await assert.rejects(() =>
-    runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
+    runUpload(ws.filePath, { chat: '@store', 'chunk-size': '400' }, {
       ...deps(fakeClient({ failOnChunk: 1 })),
       configDir: ws.configDir,
       partSize: 128,
@@ -892,7 +892,7 @@ test('a resumed upload starts the bar where the last run stopped', async () => {
 
   const written = []
 
-  await runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
+  await runUpload(ws.filePath, { chat: '@store', 'chunk-size': '400' }, {
     ...deps(fakeClient()),
     configDir: ws.configDir,
     partSize: 128,
@@ -911,7 +911,7 @@ test('chunks already in the chat are reported before the bar starts', async () =
   const ws = await tempWorkspace(1000)
 
   await assert.rejects(() =>
-    runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
+    runUpload(ws.filePath, { chat: '@store', 'chunk-size': '400' }, {
       ...deps(fakeClient({ failOnChunk: 1 })),
       configDir: ws.configDir,
       partSize: 128,
@@ -921,7 +921,7 @@ test('chunks already in the chat are reported before the bar starts', async () =
 
   const out = []
 
-  await runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
+  await runUpload(ws.filePath, { chat: '@store', 'chunk-size': '400' }, {
     ...deps(fakeClient()),
     configDir: ws.configDir,
     partSize: 128,
@@ -944,7 +944,7 @@ test('nothing left to send draws no bar at all', async () => {
   const ws = await tempWorkspace(1000)
 
   await assert.rejects(() =>
-    runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
+    runUpload(ws.filePath, { chat: '@store', 'chunk-size': '400' }, {
       ...deps(fakeClient()),
       sendManifest: async () => {
         throw new Error('connection dropped before the manifest')
@@ -959,7 +959,7 @@ test('nothing left to send draws no bar at all', async () => {
   const logged = []
   const written = []
 
-  await runUpload(ws.filePath, { to: '@store', 'chunk-size': '400' }, {
+  await runUpload(ws.filePath, { chat: '@store', 'chunk-size': '400' }, {
     ...deps(fakeClient()),
     configDir: ws.configDir,
     partSize: 128,
@@ -1002,7 +1002,7 @@ test('a state file with an unusable chunk size names the file rather than the fl
 
   await assert.rejects(
     () =>
-      runUpload(ws.filePath, { to: '@store' }, {
+      runUpload(ws.filePath, { chat: '@store' }, {
         ...deps(fakeClient()),
         configDir: ws.configDir,
         partSize: 128,
@@ -1022,7 +1022,7 @@ test('a note reaches both the manifest and the card in the chat', async () => {
 
   await runUpload(
     ws.filePath,
-    { to: '@store', 'chunk-size': '400', note: 'quarterly accounts' },
+    { chat: '@store', 'chunk-size': '400', note: 'quarterly accounts' },
     { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
   )
 
@@ -1040,7 +1040,7 @@ test('a note stays off the chunk captions', async () => {
 
   await runUpload(
     ws.filePath,
-    { to: '@store', 'chunk-size': '400', note: 'quarterly accounts' },
+    { chat: '@store', 'chunk-size': '400', note: 'quarterly accounts' },
     { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
   )
 
@@ -1059,7 +1059,7 @@ test('a note too long to caption is refused before a single byte goes out', asyn
     () =>
       runUpload(
         ws.filePath,
-        { to: '@store', 'chunk-size': '400', note: 'x'.repeat(501) },
+        { chat: '@store', 'chunk-size': '400', note: 'x'.repeat(501) },
         { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
       ),
     /--note is 501 characters/,
@@ -1079,7 +1079,7 @@ test('a missing file alongside a note says the note may have been split by the s
     () =>
       runUpload(
         path.join(ws.dir, 'accounts'),
-        { to: '@store', note: 'quarterly' },
+        { chat: '@store', note: 'quarterly' },
         { ...deps(client), configDir: ws.configDir, silent: true, filesAfterNote: true },
       ),
     (err) => {
@@ -1096,7 +1096,7 @@ test('a missing file with no note in play is reported without the note advice', 
 
   await assert.rejects(
     () =>
-      runUpload(path.join(ws.dir, 'accounts'), { to: '@store' }, {
+      runUpload(path.join(ws.dir, 'accounts'), { chat: '@store' }, {
         ...deps(client),
         configDir: ws.configDir,
         silent: true,
@@ -1120,7 +1120,7 @@ test('a note the shell kept whole draws no advice about quoting', async () => {
     () =>
       runUpload(
         path.join(ws.dir, 'not-found'),
-        { to: '@store', note: 'ghi chu' },
+        { chat: '@store', note: 'ghi chu' },
         { ...deps(client), configDir: ws.configDir, silent: true },
       ),
     (err) => {
@@ -1142,7 +1142,7 @@ test('a one-word note with nothing after it draws no advice about quoting', asyn
     () =>
       runUpload(
         path.join(ws.dir, 'not-found'),
-        { to: '@store', note: 'march' },
+        { chat: '@store', note: 'march' },
         { ...deps(client), configDir: ws.configDir, silent: true, filesAfterNote: false },
       ),
     (err) => {

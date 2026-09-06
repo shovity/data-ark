@@ -34,12 +34,12 @@ function shellArg(text) {
 
 // runUpload refuses to send the rest of a backup to a different chat, so the command has to
 // name the one the chunks are already in — unless the destination in force is that chat
-// anyway, where --to would just be noise. Not knowing the destination counts as not matching:
-// leaving --to out would be a guess about where a backup already in progress went.
+// anyway, where --chat would just be noise. Not knowing the destination counts as not matching:
+// leaving --chat out would be a guess about where a backup already in progress went.
 function resumeCommand(state, destination) {
   const matches = destination !== null && state.chat === String(destination)
 
-  return `npx telstore ${shellArg(state.path)}${matches ? '' : ` --to ${shellArg(state.chat)}`}`
+  return `npx telstore ${shellArg(state.path)}${matches ? '' : ` --chat ${shellArg(state.chat)}`}`
 }
 
 // Why a resume is off the table, in the words of the thing the user would have to fix. The
@@ -162,7 +162,7 @@ export async function runStatus(options = {}, deps = {}) {
 
   log(row('Unfinished', `${states.length} backup${states.length === 1 ? '' : 's'}`))
 
-  // The destination is what decides whether the resume command needs a --to. A row that
+  // The destination is what decides whether the resume command needs a --chat. A row that
   // failed to parse leaves nothing to compare against, which is not the same as a match.
   const destination = settings?.chat ?? null
 

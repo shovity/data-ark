@@ -37,7 +37,7 @@ npx telstore restore telstore-20260905-7f3a91
 ## Settings
 
 `config` writes; flags do not. A flag applies to the run you typed it on and changes nothing
-on disk, so `--to @elsewhere` sends one backup elsewhere without moving the destination for
+on disk, so `--chat @elsewhere` sends one backup elsewhere without moving the destination for
 the next one.
 
 ```bash
@@ -48,7 +48,7 @@ npx telstore config chunkSize --unset  # back to the default
 
 | Setting | Flag | Default | Meaning |
 |---|---|---|---|
-| `chat` | `--to` | none | `@username`, `-100123…`, or `me` |
+| `chat` | `--chat` | none | `@username`, `-100123…`, or `me` |
 | `chunkSize` | `--chunk-size` | `1800MB` | e.g. `1.8GB`, `500MB`. Ceiling 1950MB. |
 | `uploadConcurrency` | `--upload-concurrency` | `32` | 512KB parts in parallel while uploading, 1–64 |
 | `downloadConcurrency` | `--download-concurrency` | `8` | 8MB slices in parallel while restoring, 1–64 |

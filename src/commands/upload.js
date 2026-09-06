@@ -183,14 +183,14 @@ export async function runUpload(filePath, options = {}, deps = {}) {
   const resuming = Boolean(state)
 
   // Naming the way back rather than a flag to drop: the destination may have come from the
-  // command line or from the stored setting, and "run again without --to" is no help to
+  // command line or from the stored setting, and "run again without --chat" is no help to
   // someone who never typed one. Pointing at the chat itself is right either way.
   if (resuming && state.chat !== String(chat)) {
     const file = stateFile(key, configDir)
     throw new Error(
       `This unfinished backup is going to ${state.chat}, but the current command targets ${chat} — ` +
         `a single backup cannot be split across two destinations. Run again with ` +
-        `--to ${state.chat} to carry on sending there, or delete ${file} and run again to ` +
+        `--chat ${state.chat} to carry on sending there, or delete ${file} and run again to ` +
         `start a new backup in ${chat}.`,
     )
   }

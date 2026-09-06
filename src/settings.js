@@ -35,7 +35,7 @@ function wholeNumber(raw, where, minimum, maximum, explanation) {
 // which is why chunkSize prints bytes and leaves "1.8 GB" to `describe`.
 export const SETTINGS = {
   chat: {
-    flag: 'to',
+    flag: 'chat',
     default: null,
     // A number here is a chat id, and a chat id is a whole number. 42.5 would otherwise
     // slip through as the string "42.5" and only fail much later, at Telegram, as a chat
@@ -129,9 +129,9 @@ export const SETTINGS = {
 
 export const SETTING_KEYS = Object.keys(SETTINGS)
 
-// Someone who has been typing `--to` and `--chunk-size` for a week will type them at the
-// config command too. Accept the flag spelling as a way in, and canonicalise on the way to
-// disk so the file only ever holds one name per setting.
+// Someone who has been typing `--chunk-size` and `--upload-concurrency` for a week will type
+// them at the config command too. Accept the flag spelling as a way in, and canonicalise on
+// the way to disk so the file only ever holds one name per setting.
 const ALIASES = new Map()
 
 for (const [key, spec] of Object.entries(SETTINGS)) {
@@ -150,7 +150,7 @@ export function isManagedByLogin(input) {
 // Where a value came from, spelled the way the user would recognise it. A stored value that
 // fails to parse must not be reported as a bad flag: nobody typed a flag, and telling them
 // to fix one sends them off after the wrong thing — the same mistake the old
-// "run again without --to" advice made.
+// "run again without --chat" advice made.
 function origin(key, from, file) {
   return from === 'flag' ? `--${SETTINGS[key].flag}` : `${key} in ${file}`
 }
@@ -197,7 +197,7 @@ export function requireChat(values) {
   if (values.chat === null || values.chat === undefined) {
     throw new Error(
       'No destination set — run "npx telstore config chat @my_backups" to set one ' +
-        '("config chat me" for Saved Messages), or pass --to to choose one for this run.',
+        '("config chat me" for Saved Messages), or pass --chat to choose one for this run.',
     )
   }
 

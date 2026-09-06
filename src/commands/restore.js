@@ -103,7 +103,7 @@ export async function runRestore(backupId, options = {}, deps = {}) {
     if (!manifestMessage) {
       throw new Error(
         `No manifest found for ${backupId} in ${chat}. ` +
-          'Check the backup id, or use --to to point at the right chat.',
+          'Check the backup id, or use --chat to point at the right chat.',
       )
     }
 

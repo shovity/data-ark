@@ -107,12 +107,12 @@ test('the connection is closed even when getMe fails', async () => {
   assert.match(out.text(), /AUTH_KEY_UNREGISTERED/)
 })
 
-test('status --to reports that destination without saving it', async () => {
+test('status --chat reports that destination without saving it', async () => {
   const configDir = await tempDir('status')
   await saveConfig({ ...LOGGED_IN, settings: { chat: '@old' } }, configDir)
   const out = collect()
 
-  await runStatus({ to: '@new' }, {
+  await runStatus({ chat: '@new' }, {
     configDir,
     log: out.log,
     connect: async () => fakeClient(),
@@ -124,12 +124,12 @@ test('status --to reports that destination without saving it', async () => {
   assert.equal((await loadConfig(configDir)).settings.chat, '@old', 'a flag must never write')
 })
 
-test('status --to with an unusable destination is refused, not shown', async () => {
+test('status --chat with an unusable destination is refused, not shown', async () => {
   const configDir = await tempDir('status')
   await saveConfig({ ...LOGGED_IN, settings: { chat: '@old' } }, configDir)
   const out = collect()
 
-  await runStatus({ to: '  ' }, {
+  await runStatus({ chat: '  ' }, {
     configDir,
     log: out.log,
     connect: async () => fakeClient(),
@@ -256,32 +256,32 @@ test('a resumable backup is shown with the command that resumes it', async () =>
 
 // Sending the rest of a backup somewhere else is what runUpload refuses outright, so the
 // command status prints has to name the chat the chunks are already in.
-test('the resume command carries --to when the backup goes somewhere else', async () => {
+test('the resume command carries --chat when the backup goes somewhere else', async () => {
   const configDir = await tempDir('status')
   await saveConfig({ ...LOGGED_IN, settings: { chat: '@elsewhere' } }, configDir)
   const file = await saveResumable(configDir, { chat: '@my_backups' })
 
   const text = await report(configDir)
 
-  assert.match(text, new RegExp(`Resume\\s+npx telstore ${file} --to @my_backups$`, 'm'))
+  assert.match(text, new RegExp(`Resume\\s+npx telstore ${file} --chat @my_backups$`, 'm'))
 })
 
-test('the resume command leaves out --to when the destination already matches', async () => {
+test('the resume command leaves out --chat when the destination already matches', async () => {
   const configDir = await tempDir('status')
   await saveConfig({ ...LOGGED_IN, settings: { chat: '@my_backups' } }, configDir)
   await saveResumable(configDir, { chat: '@my_backups' })
 
-  assert.doesNotMatch(await report(configDir), /--to/)
+  assert.doesNotMatch(await report(configDir), /--chat/)
 })
 
 // With no destination to compare against there is no way to know the chat still matches,
-// and a command that leaves --to out would be a guess about where the chunks went.
-test('the resume command carries --to when the destination cannot be read', async () => {
+// and a command that leaves --chat out would be a guess about where the chunks went.
+test('the resume command carries --chat when the destination cannot be read', async () => {
   const configDir = await tempDir('status')
   await saveConfig({ ...LOGGED_IN, settings: { chat: 42.5 } }, configDir)
   await saveResumable(configDir, { chat: '@my_backups' })
 
-  assert.match(await report(configDir), /Resume\s+npx telstore .* --to @my_backups$/m)
+  assert.match(await report(configDir), /Resume\s+npx telstore .* --chat @my_backups$/m)
 })
 
 test('a path with a space in it is quoted so the command can be pasted', async () => {

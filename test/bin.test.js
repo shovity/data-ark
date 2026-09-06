@@ -67,7 +67,7 @@ test('a second file on the command line is uploaded, not dropped', async () => {
     JSON.stringify({ session: 's', apiId: 1, apiHash: 'h' }),
   )
 
-  const { stdout, stderr } = await run(process.execPath, [BIN, present, missing, '--to', 'me'], {
+  const { stdout, stderr } = await run(process.execPath, [BIN, present, missing, '--chat', 'me'], {
     env: { ...process.env, HOME: home },
   }).catch((err) => ({ stdout: err.stdout ?? '', stderr: err.stderr ?? '' }))
 
@@ -179,8 +179,8 @@ test('config writes a setting and reads it back through the real argv', async ()
   assert.deepEqual(stored, { settings: { chat: -1001234567890 } })
 })
 
-test('--to with nothing to upload names the command that saves a destination', async () => {
-  const { code, stderr } = await runCli(['--to', '@my_backups'])
+test('--chat with nothing to upload names the command that saves a destination', async () => {
+  const { code, stderr } = await runCli(['--chat', '@my_backups'])
 
   assert.equal(code, 2)
   assert.match(stderr, /telstore config chat @my_backups/)
@@ -326,7 +326,7 @@ test('an unquoted note is named as the reason a file is missing', async () => {
 
   const { stderr } = await run(
     process.execPath,
-    [BIN, present, '--to', 'me', '--note', 'ghi', 'chu'],
+    [BIN, present, '--chat', 'me', '--note', 'ghi', 'chu'],
     { env: { ...process.env, HOME: home } },
   ).catch((err) => ({ stderr: err.stderr ?? '' }))
 

@@ -14,7 +14,7 @@ const SUBCOMMANDS = new Set([
 ])
 
 const OPTIONS = {
-  to: { type: 'string' },
+  chat: { type: 'string' },
   'chunk-size': { type: 'string' },
   'upload-concurrency': { type: 'string' },
   'download-concurrency': { type: 'string' },
@@ -66,7 +66,7 @@ Settings:
   verbose              Show Telegram connection logs, default false.
 
 Options apply to one run and are never saved. Use config to change a setting for good.
-  --to <chat>                 Destination for this run only.
+  --chat <chat>               Destination for this run only.
   --chunk-size <n>            Chunk size for this run only. An unfinished backup keeps the
                               size it started with.
   --upload-concurrency <n>    512KB parts in parallel while uploading, this run only.
@@ -141,8 +141,8 @@ export function interruptMessage(command, { backupId, done = [] } = {}) {
 // parseArgs rejects anything starting with a dash as an option, and reports it as one:
 // `config chat -100123` fails with "Unknown option '-1'", naming a flag nobody typed.
 //
-// Two shapes need rescuing, and they are rescued differently. As a flag value, `--to -100123`
-// is joined into `--to=-100123`; only a bare negative integer qualifies, so `--to --verbose`
+// Two shapes need rescuing, and they are rescued differently. As a flag value, `--chat -100123`
+// is joined into `--chat=-100123`; only a bare negative integer qualifies, so `--chat --verbose`
 // still reports the missing value instead of eating the next flag. As a positional —
 // `config chat -100123` — there is nothing to join it to, so `--` goes in front and the rest
 // of the line is handed over verbatim. That is greedy on purpose: a flag written after the
@@ -159,8 +159,8 @@ function protectNegativeChatIds(argv) {
       return safe
     }
 
-    if (argv[i] === '--to' && /^-\d+$/.test(argv[i + 1] ?? '')) {
-      safe.push(`--to=${argv[i + 1]}`)
+    if (argv[i] === '--chat' && /^-\d+$/.test(argv[i + 1] ?? '')) {
+      safe.push(`--chat=${argv[i + 1]}`)
       i += 1
       continue
     }
@@ -202,14 +202,14 @@ export function route(argv) {
   const [first, ...rest] = positionals
   const filesAfterNote = filesNamedAfterNote(tokens)
 
-  // `telstore --to @chan` with no file used to mean "remember this destination". Flags no
+  // `telstore --chat @chan` with no file used to mean "remember this destination". Flags no
   // longer write anything, so that line now asks for a run that has nothing to upload —
   // say where the destination actually lives instead of printing help at someone who was
   // perfectly clear about what they wanted.
-  if (first === undefined && values.to && !values.help) {
+  if (first === undefined && values.chat && !values.help) {
     throw new Error(
-      `Nothing to upload. To change the destination for good, run "npx telstore config chat ${values.to}". ` +
-        'To use it for one run, pass --to alongside a file or a command.',
+      `Nothing to upload. To change the destination for good, run "npx telstore config chat ${values.chat}". ` +
+        'To use it for one run, pass --chat alongside a file or a command.',
     )
   }
 
