@@ -152,3 +152,15 @@ test('--to with nothing to upload names the command that saves a destination', a
   assert.match(stderr, /data-ark config chat @my_backups/)
   assert.doesNotMatch(stderr, /at .*\.js:\d+/)
 })
+
+test('delete without a backup id explains what is missing', async () => {
+  const { code, stderr } = await runCli(['delete'])
+  assert.equal(code, 1)
+  assert.match(stderr, /Missing backup id/)
+  assert.doesNotMatch(stderr, /at .*\.js:\d+/)
+})
+
+test('--help mentions delete', async () => {
+  const { stdout } = await runCli(['--help'])
+  assert.match(stdout, /npx data-ark delete/)
+})

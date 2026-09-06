@@ -65,6 +65,37 @@ from the unfinished backup's own rather than starting over, and `pruneStates` �
 only the `MAX_STATES` most recent records — names on stderr every backup id it drops, even
 when the caller asked for silence.
 
+`delete` is the one command that destroys data on purpose, so the rule runs the other way
+for it: nothing may be removed that the user did not ask for, and nothing may be reported
+gone that is still there. Three things follow, and none of them is decoration.
+
+The chunks go first and the manifest goes last, because the manifest is the only list of the
+message ids. Removing it first and then losing the connection strands every remaining chunk
+with nothing able to name it again — exactly the mess `delete` exists to clean up. Leaving it
+until last means an interrupted delete is finished by running the same command again, since
+Telegram says nothing about an id that is already gone. The visible cost is a window where
+`list` still shows a backup that `restore` will refuse: loud and fixable, which is the trade
+this project always takes. The local record goes last of all, after the chat is clean, for
+the same reason — where there is no manifest it *is* the only list.
+
+`delete` does not go through `parseManifest`. That function validates the chunk *layout*
+because `restore` writes bytes at offsets computed from it, and a manifest that fails those
+checks is precisely the broken backup somebody is trying to remove; refusing to read it would
+leave the only way out through the Telegram app. What `delete` needs instead is the one field
+`parseManifest` never checks, so `manifestMessageIds` checks it and nothing else: a `msgId`
+that is not a whole positive number refuses the *whole* manifest rather than deleting the ids
+around it, because a message id is the name of something about to be destroyed for good, and
+that is the one number nobody may guess at. A manifest whose body names a different backup is
+refused for the same reason — a file renamed in the chat would otherwise have data-ark destroy
+another backup's chunks while reporting this one.
+
+`src/client.js` batches the ids itself rather than handing all of them to GramJS at once.
+GramJS's `deleteMessages` splits them into hundreds and fires every batch through
+`Promise.all`, which would put a hundred requests in flight with none of them under
+`withRetry` or the stall deadline. Its peer resolution and its choice between
+`channels.DeleteMessages` and `messages.DeleteMessages` are still what data-ark calls, because
+that choice is exactly what a fake client would never catch us getting wrong.
+
 That refusal keys off the *source* of the size, not its presence. A `chunkSize` in the config
 file says what to use when nobody asks for anything, so a resumed backup quietly keeps its own
 size; only `--chunk-size` on the command line is somebody asking, and only that is refused.
@@ -91,6 +122,16 @@ be served from the page cache.
 `src/commands/*.js` own the user-facing narrative. `src/caption.js`, `src/chat.js`,
 `src/chunking.js`, `src/manifest.js`, `src/progress.js`, `src/retry.js`, `src/settings.js`,
 `src/stall.js`, `src/state.js` and `src/config.js` are pure enough to test without a client.
+
+`src/confirm.js` holds the y/N prompt `restore` and `delete` both ask through, and
+`findManifestMessage` lives in `src/client.js` rather than in either command, because two
+copies of "how data-ark finds a manifest" is how the two of them start disagreeing about
+which file is the manifest.
+
+`--yes` and `--out` are the two flags with no setting behind them, and for the same kind of
+reason: neither is a preference. `--out` names where one restore goes, and `--yes` is the
+answer to a question asked about one particular backup. Stored in the config it would become
+standing permission never to ask again before destroying one.
 
 `src/settings.js` is the one place that knows a setting exists: its flag, its default, how it
 parses and how it prints. `config`, `cli.js`'s help and every command read it, so a default

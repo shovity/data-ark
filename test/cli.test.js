@@ -150,3 +150,35 @@ test('interrupting anything else just says it stopped', () => {
   assert.equal(interruptMessage('login'), '\nStopped.\n')
   assert.equal(interruptMessage(null), '\nStopped.\n')
 })
+
+test('delete is a subcommand carrying the backup id', () => {
+  const r = route(['delete', 'ark-20260905-7f3a91'])
+  assert.equal(r.command, 'delete')
+  assert.deepEqual(r.args, ['ark-20260905-7f3a91'])
+})
+
+test('delete without an id is still routed, so the command can say what is missing', () => {
+  const r = route(['delete'])
+  assert.equal(r.command, 'delete')
+  assert.deepEqual(r.args, [])
+})
+
+test('--yes is a flag, present only when it was typed', () => {
+  assert.equal(route(['delete', 'ark-1', '--yes']).options.yes, true)
+  assert.equal(route(['delete', 'ark-1']).options.yes, undefined)
+})
+
+test('delete reaches a negative channel id like every other command', () => {
+  const r = route(['delete', 'ark-1', '--to', '-1001234567890'])
+  assert.equal(r.command, 'delete')
+  assert.deepEqual(r.args, ['ark-1'])
+  assert.equal(r.options.to, '-1001234567890')
+})
+
+// Ctrl-C during a delete has already destroyed messages for good, and the manifest is
+// deliberately still there. Saying "Stopped." alone would read as "nothing happened".
+test('Ctrl-C during a delete says some chunks are already gone', () => {
+  const message = interruptMessage('delete')
+  assert.match(message, /already gone/)
+  assert.match(message, /again/)
+})

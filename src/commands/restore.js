@@ -1,13 +1,17 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
-import readline from 'node:readline/promises'
-import { stdin, stdout } from 'node:process'
 
-import { closeQuietly, connect as realConnect, searchDocuments } from '../client.js'
+import {
+  closeQuietly,
+  connect as realConnect,
+  findManifestMessage,
+  readMessageBytes as realReadMessageBytes,
+} from '../client.js'
+import { askConfirm } from '../confirm.js'
 import { configFile, defaultConfigDir, loadConfig } from '../config.js'
 import { requireChat, resolveSettings } from '../settings.js'
 import { downloadToFile } from '../downloader.js'
-import { manifestFileName, parseManifest } from '../manifest.js'
+import { parseManifest } from '../manifest.js'
 import { createProgress, formatBytes, formatDuration } from '../progress.js'
 
 // Anything past a minute of waiting needs saying out loud; below that the pause is shorter
@@ -18,17 +22,6 @@ const LONG_WAIT_MS = 60_000
 // occurrence buries the progress bar in a wall of text. Stay quiet until the third retry:
 // by then the trouble has outlived two backoffs and is worth saying out loud.
 const ANNOUNCE_AFTER_ATTEMPT = 3
-
-async function realSearchManifest(client, peer, backupId) {
-  const wanted = manifestFileName(backupId)
-  const found = await searchDocuments(client, peer, { search: backupId, limit: 100 })
-
-  return found.find((doc) => doc.fileName === wanted)?.message ?? null
-}
-
-async function realReadMessageBytes(client, message) {
-  return await client.downloadMedia(message)
-}
 
 async function realGetMessage(client, peer, msgId) {
   const [message] = await client.getMessages(peer, { ids: [msgId] })
@@ -56,19 +49,12 @@ function safeOutName(name) {
   return base
 }
 
-async function askConfirm(question) {
-  const rl = readline.createInterface({ input: stdin, output: stdout })
-  const answer = await rl.question(question)
-  rl.close()
-  return /^y/i.test(answer.trim())
-}
-
 export async function runRestore(backupId, options = {}, deps = {}) {
   const {
     connect = realConnect,
     disconnect = (client) => client.destroy(),
     configDir = defaultConfigDir(),
-    searchManifest = realSearchManifest,
+    searchManifest = findManifestMessage,
     readMessageBytes = realReadMessageBytes,
     getMessage = realGetMessage,
     downloadChunk = realDownloadChunk,

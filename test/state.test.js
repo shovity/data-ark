@@ -14,6 +14,7 @@ import {
   listStates,
   pruneStates,
   MAX_STATES,
+  findStates,
 } from '../src/state.js'
 
 async function tempDir() {
@@ -183,4 +184,50 @@ test('pruneStates on a machine that has never run an upload does nothing', async
 
 test('the default limit is 20 unfinished backups', () => {
   assert.equal(MAX_STATES, 20)
+})
+
+test('findStates returns the record of a backup together with the file it came from', async () => {
+  const dir = await tempDir()
+  await saveState('abc123', sampleState({ id: 'ark-wanted' }), dir)
+  await saveState('def456', sampleState({ id: 'ark-other' }), dir)
+
+  const found = await findStates('ark-wanted', dir)
+
+  assert.equal(found.length, 1)
+  assert.equal(found[0].key, 'abc123')
+  assert.equal(found[0].file, path.join(stateDir(dir), 'abc123.json'))
+  assert.equal(found[0].state.id, 'ark-wanted')
+})
+
+// The key is a hash of the path, size and mtime *inside* the record, so recomputing it
+// would trust an untrusted file to say where it lives. A hand-edited path yields a key
+// naming no file at all, and clearState ignores a file that is not there — data-ark would
+// report a record dropped that is still sitting on disk.
+test('findStates reports the real file name even when the record disagrees with it', async () => {
+  const dir = await tempDir()
+  await saveState('handpicked', sampleState({ id: 'ark-wanted', path: '/somewhere/else' }), dir)
+
+  const [found] = await findStates('ark-wanted', dir)
+
+  assert.equal(found.key, 'handpicked')
+})
+
+test('findStates returns every record claiming the same backup id', async () => {
+  const dir = await tempDir()
+  await saveState('one', sampleState({ id: 'ark-twin' }), dir)
+  await saveState('two', sampleState({ id: 'ark-twin', path: '/other.tar' }), dir)
+
+  assert.equal((await findStates('ark-twin', dir)).length, 2)
+})
+
+test('findStates skips a state file that cannot be read instead of failing', async () => {
+  const dir = await tempDir()
+  await saveState('good', sampleState({ id: 'ark-wanted' }), dir)
+  await fs.writeFile(path.join(stateDir(dir), 'broken.json'), '{ not json')
+
+  assert.equal((await findStates('ark-wanted', dir)).length, 1)
+})
+
+test('findStates on a machine that has never run an upload finds nothing', async () => {
+  assert.deepEqual(await findStates('ark-wanted', await tempDir()), [])
 })

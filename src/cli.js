@@ -1,6 +1,15 @@
 import { parseArgs } from 'node:util'
 
-const SUBCOMMANDS = new Set(['login', 'logout', 'list', 'restore', 'status', 'config', 'help'])
+const SUBCOMMANDS = new Set([
+  'login',
+  'logout',
+  'list',
+  'restore',
+  'delete',
+  'status',
+  'config',
+  'help',
+])
 
 const OPTIONS = {
   to: { type: 'string' },
@@ -10,6 +19,7 @@ const OPTIONS = {
   limit: { type: 'string' },
   verbose: { type: 'boolean' },
   unset: { type: 'boolean' },
+  yes: { type: 'boolean' },
   help: { type: 'boolean', short: 'h' },
 }
 
@@ -20,6 +30,7 @@ Usage:
   npx data-ark <file>                       Split a file and upload it to Telegram
   npx data-ark list                         List the backups stored in the destination
   npx data-ark restore <backup-id>          Download the chunks and reassemble the file
+  npx data-ark delete <backup-id>           Remove a backup's chunks and manifest from the chat
   npx data-ark status                       Show the account, the destination and unfinished backups
   npx data-ark config                       Show every setting and where its value comes from
   npx data-ark logout                       Remove the saved session
@@ -43,6 +54,7 @@ Options apply to one run and are never saved. Use config to change a setting for
                          downloads with its own fixed pool of workers.
   --out <path>           Where to write the restored file. Defaults to the basename in the manifest.
   --limit <n>            How many backups list shows this run.
+  --yes                  Delete without asking to confirm first.
   --verbose              Show Telegram connection logs for this run.
   -h, --help             Show this help.
 `
@@ -63,6 +75,16 @@ export function interruptMessage(command, { backupId } = {}) {
 
   if (command === 'restore') {
     return '\nStopped. Download progress is not saved, running again starts over.\n'
+  }
+
+  // A delete has already destroyed messages for good by the time Ctrl-C lands, and the
+  // manifest is deliberately still there — it is what a second run reads to finish. Saying
+  // only "Stopped." would read as "nothing happened", which is the one thing it never means.
+  if (command === 'delete') {
+    return (
+      '\nStopped. Some chunk messages are already gone — run the same command again to ' +
+      'finish removing the backup.\n'
+    )
   }
 
   return '\nStopped.\n'

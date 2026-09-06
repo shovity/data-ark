@@ -3,6 +3,10 @@ import { Logger } from 'telegram/extensions/index.js'
 import { LogLevel } from 'telegram/extensions/Logger.js'
 import { StringSession } from 'telegram/sessions/index.js'
 
+import { manifestFileName } from './manifest.js'
+import { withRetry } from './retry.js'
+import { DEFAULT_STALL_MS, withStallTimeout } from './stall.js'
+
 // GramJS narrates its version, every connection and every disconnect at info level, and
 // those timestamped lines land in the middle of the progress bar. The client reads this
 // logger before it prints anything, so LogLevel.NONE silences all of it; --verbose asks
@@ -36,6 +40,73 @@ export async function searchDocuments(client, peer, { search, limit }) {
     date: message.date,
     message,
   }))
+}
+
+// How data-ark finds a backup's manifest, in one place because restore and delete must not
+// disagree about it. The search is by backup id, but the answer is decided by the file name
+// data-ark itself wrote — a caption is text a person can edit, a file name is not.
+export async function findManifestMessage(client, peer, backupId) {
+  const wanted = manifestFileName(backupId)
+  const found = await searchDocuments(client, peer, { search: backupId, limit: 100 })
+
+  return found.find((doc) => doc.fileName === wanted)?.message ?? null
+}
+
+export async function readMessageBytes(client, message) {
+  return await client.downloadMedia(message)
+}
+
+// The one place data-ark removes messages from a chat, and the mirror of searchDocuments
+// above. GramJS has its own deleteMessages, and it is the right thing to call — it resolves
+// the peer and picks between channels.DeleteMessages and messages.DeleteMessages, which is
+// exactly the choice a fake client would never catch us getting wrong.
+//
+// What it does on top of that is the problem: it splits the ids into batches of a hundred
+// and fires every batch at once through Promise.all. A ten-thousand-chunk backup would put
+// a hundred requests in flight together, none of them under the retry policy or the stall
+// deadline that every other network wait in data-ark carries. Batching here instead keeps
+// one request outstanding at a time, under both.
+//
+// Telegram does not complain about an id that is no longer there, so sending a batch twice
+// costs nothing: a delete interrupted halfway is finished by running it again.
+export const DELETE_BATCH_SIZE = 100
+
+export async function deleteMessages(client, peer, ids, options = {}) {
+  const {
+    batchSize = DELETE_BATCH_SIZE,
+    retryOptions = {},
+    stallMs = DEFAULT_STALL_MS,
+    onBatch,
+  } = options
+
+  let deleted = 0
+
+  for (let start = 0; start < ids.length; start += batchSize) {
+    const batch = ids.slice(start, start + batchSize)
+
+    await withRetry(
+      () =>
+        // The options object is not optional: GramJS destructures `{ revoke }` with no
+        // default of its own, so a two-argument call throws a TypeError before it ever
+        // reaches the network. revoke is passed explicitly anyway — a backup has to go for
+        // everyone who can see the chat, and that intent belongs in our code rather than in
+        // a dependency's default.
+        withStallTimeout(
+          client.deleteMessages(peer, batch, { revoke: true }),
+          stallMs,
+          () =>
+            `Telegram stopped answering while removing messages ${start + 1}-` +
+            `${start + batch.length} of ${ids.length}: nothing back for ` +
+            `${Math.round(stallMs / 1000)}s.`,
+        ),
+      retryOptions,
+    )
+
+    deleted += batch.length
+    onBatch?.(deleted, ids.length)
+  }
+
+  return deleted
 }
 
 // Every command ends by putting the connection down, and a failure there must never

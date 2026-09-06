@@ -37,15 +37,51 @@ export function serializeManifest(manifest) {
   return Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
 }
 
-export function parseManifest(input) {
+// parseManifest's own front door, on its own so delete can read a manifest body without
+// the layout checks behind it.
+export function parseManifestJson(input) {
   const text = Buffer.isBuffer(input) ? input.toString('utf8') : String(input)
 
-  let manifest
   try {
-    manifest = JSON.parse(text)
+    return JSON.parse(text)
   } catch {
     throw new Error('Cannot read manifest: content is not valid JSON.')
   }
+}
+
+// Delete needs one thing from a manifest that restore does not, and none of the things
+// restore needs. parseManifest is the wrong gate for it: it validates the chunk *layout*,
+// because restore writes bytes at offsets computed from it — and a manifest that fails
+// those checks is exactly the broken backup somebody is trying to delete, so refusing to
+// read it here would leave the only way out through the Telegram app. It also never looks
+// at msgId, which is the only field delete actually uses.
+//
+// Every id is checked before a single message is removed. A msgId is handed to Telegram as
+// the name of something to destroy for good, and that is the one number nobody may guess
+// at — so a manifest that cannot say it exactly is refused whole, rather than half-deleted
+// and then left without the list that names the rest.
+export function manifestMessageIds(manifest) {
+  if (!Array.isArray(manifest?.chunks) || manifest.chunks.length === 0) {
+    throw new Error('Manifest has no chunk list, so it cannot say which messages to remove.')
+  }
+
+  return manifest.chunks.map((chunk, index) => {
+    const msgId = chunk?.msgId
+
+    if (!Number.isSafeInteger(msgId) || msgId < 1) {
+      throw new Error(
+        `Manifest gives ${JSON.stringify(msgId)} as the message id of chunk ${index + 1}, ` +
+          'which is not a message id. Deleting from this manifest could remove the wrong ' +
+          'messages, so data-ark is not deleting anything.',
+      )
+    }
+
+    return msgId
+  })
+}
+
+export function parseManifest(input) {
+  const manifest = parseManifestJson(input)
 
   if (manifest.v !== MANIFEST_VERSION) {
     throw new Error(

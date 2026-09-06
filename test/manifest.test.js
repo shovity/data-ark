@@ -8,6 +8,8 @@ import {
   buildManifest,
   serializeManifest,
   parseManifest,
+  parseManifestJson,
+  manifestMessageIds,
 } from '../src/manifest.js'
 
 function sampleChunks() {
@@ -197,4 +199,51 @@ test('parseManifest rejects a chunk size that is not a whole number', () => {
   })
 
   assert.throws(() => parseManifest(text), /whole number/)
+})
+
+test('parseManifestJson reads a manifest body without judging what is in it', () => {
+  assert.deepEqual(parseManifestJson(Buffer.from('{"v":9,"chunks":[]}')), { v: 9, chunks: [] })
+})
+
+test('parseManifestJson refuses content that is not JSON', () => {
+  assert.throws(() => parseManifestJson('{ not json'), /not valid JSON/)
+})
+
+// The test that proves delete does not go through parseManifest. A manifest whose layout
+// is wrong is exactly the broken backup somebody wants gone; refusing to read its message
+// ids would leave the only way out through the Telegram app.
+test('manifestMessageIds reads a manifest that parseManifest would refuse', () => {
+  const broken = { v: 2, size: 999, chunkSize: 1, chunks: [{ i: 0, msgId: 10, size: 7 }] }
+
+  assert.throws(() => parseManifest(JSON.stringify(broken)))
+  assert.deepEqual(manifestMessageIds(broken), [10])
+})
+
+test('manifestMessageIds returns the ids in the order the manifest lists them', () => {
+  const manifest = { chunks: [{ msgId: 10 }, { msgId: 12 }, { msgId: 11 }] }
+
+  assert.deepEqual(manifestMessageIds(manifest), [10, 12, 11])
+})
+
+test('manifestMessageIds refuses a manifest with no chunk list', () => {
+  assert.throws(() => manifestMessageIds({ chunks: [] }), /cannot say which messages/)
+  assert.throws(() => manifestMessageIds({}), /cannot say which messages/)
+  assert.throws(() => manifestMessageIds({ chunks: 'nope' }), /cannot say which messages/)
+})
+
+// Which message to destroy is the one number nobody may guess at. A manifest that cannot
+// say it exactly is refused whole, rather than half-deleted and then left without the list
+// that names the rest.
+test('manifestMessageIds refuses an id that is not a message id', () => {
+  for (const msgId of [null, undefined, '12', 0, -3, 1.5, Number.MAX_SAFE_INTEGER + 2]) {
+    assert.throws(
+      () => manifestMessageIds({ chunks: [{ msgId: 10 }, { msgId }] }),
+      /chunk 2/,
+      `expected ${JSON.stringify(msgId)} to be refused`,
+    )
+  }
+})
+
+test('manifestMessageIds refuses a chunk entry that is not an object', () => {
+  assert.throws(() => manifestMessageIds({ chunks: [null] }), /chunk 1/)
 })

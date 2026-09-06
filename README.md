@@ -13,6 +13,7 @@ npx data-ark config                       # every setting and where its value co
 npx data-ark status                       # account, destination, unfinished backups
 npx data-ark list                         # what is already stored in the destination
 npx data-ark restore ark-20260905-7f3a91
+npx data-ark delete ark-20260905-7f3a91   # take it back out of the chat, for good
 ```
 
 ## What you need
@@ -42,6 +43,9 @@ npx data-ark config chunkSize --unset     # back to the default
 | `concurrency` | `--concurrency` | `8` | 512KB parts sent in parallel. An integer from 1 to 64. Upload only — `restore` downloads through its own fixed pool of workers. |
 | `limit` | `--limit` | `20` | How many backups `list` shows, newest first |
 | `verbose` | `--verbose` | off | Show the Telegram client's own connection logs, hidden by default so they do not break up the progress bar |
+
+`--yes` has no setting either — it answers the confirmation `delete` asks before destroying
+a backup, and an answer stored in a file would be an answer to a question nobody heard.
 
 `--out <path>` has no setting: it names where one particular restore should write, and
 defaults to the basename in the manifest. Relative paths resolve against the current directory.
@@ -96,11 +100,38 @@ If the connection drops during an **upload**, just run the same command again �
 
 **Restore keeps no state to resume from.** Pressing `Ctrl-C` mid-restore saves nothing — running again starts over.
 
+## Deleting a backup
+
+```bash
+npx data-ark delete ark-20260905-7f3a91
+```
+
+It prints what it is about to destroy, asks once, and then removes every chunk message and
+the manifest from the chat and drops the local record if there is one. `--yes` skips the
+question. **There is no undo** — Telegram is the only copy.
+
+It also works on a backup that never finished: those have chunks in the chat but no manifest,
+so `list` cannot see them and only `status` knows they exist. `delete` reads the local record
+instead and clears both.
+
+The chunks go first and the manifest goes last, deliberately. The manifest is the only list
+of the message ids, so if a delete is interrupted — Ctrl-C, a dropped connection — running
+the same command again finds that list still there and finishes the job. Telegram says
+nothing about an id that is already gone, so a second run costs nothing. In between the two
+runs the backup still shows up in `list`, and a `restore` of it fails loudly rather than
+handing over a partial file.
+
+Two things it refuses rather than guesses at: a manifest whose body names a *different*
+backup (a file renamed in the chat — its message ids point at somebody else's chunks), and a
+manifest or local record giving a message id that is not a whole positive number. Neither
+deletes anything at all. A manifest too damaged for `restore` to use *can* still be deleted —
+that is usually the one you want gone.
+
 ## Limits worth knowing
 
 - A chunk cannot exceed 1950MB: Telegram accepts at most 4000 parts of 512KB per file, an arithmetic ceiling of about 1953MB, and data-ark stops at 1950MB to leave a safety margin.
 - The data is **not** encrypted. Don't upload anything you would mind sitting on someone else's infrastructure.
-- Deleting a chunk message on Telegram destroys the backup, with no way to recover it.
+- Deleting a chunk message on Telegram destroys the backup, with no way to recover it. Use `npx data-ark delete <backup-id>` when that is what you actually want.
 - Keep the `backupId`. Without it you have to hunt for the manifest in the chat by hand.
 
 ## Where the config lives

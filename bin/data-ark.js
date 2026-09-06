@@ -2,6 +2,7 @@
 import { route, HELP, interruptMessage } from '../src/cli.js'
 import { runLogin } from '../src/commands/login.js'
 import { runConfig } from '../src/commands/config.js'
+import { runDelete } from '../src/commands/delete.js'
 import { runList } from '../src/commands/list.js'
 import { runLogout } from '../src/commands/logout.js'
 import { runRestore } from '../src/commands/restore.js'
@@ -72,6 +73,13 @@ async function main() {
         throw new Error('Missing backup id. Example: npx data-ark restore ark-20260905-7f3a91')
       }
       await runRestore(parsed.args[0], parsed.options)
+      return
+
+    case 'delete':
+      if (!parsed.args[0]) {
+        throw new Error('Missing backup id. Example: npx data-ark delete ark-20260905-7f3a91')
+      }
+      await runDelete(parsed.args[0], parsed.options)
       return
 
     default:
