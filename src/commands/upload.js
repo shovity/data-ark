@@ -1,8 +1,8 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 
-import { Api } from 'telegram'
-import { CustomFile } from 'telegram/client/uploads.js'
+import { Api } from 'teleproto'
+import { CustomFile } from 'teleproto/client/uploads.js'
 
 import { PART_SIZE, planChunks } from '../chunking.js'
 import { chunkCaption, manifestCaption } from '../caption.js'

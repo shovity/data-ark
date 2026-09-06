@@ -100,11 +100,13 @@ async function main() {
   }
 }
 
-// GramJS keeps "exported senders" around together with a 30-second timer to release
-// them, and neither client.disconnect() nor destroy() cleans them up: both of those
-// maps are Maps, but the code walks them with Object.values and so misses everything.
-// The result is a command that prints "Done" and then hangs for another ~30 seconds,
-// during which Ctrl-C falsely reports that nothing was saved. Finish the work, exit.
+// Written for GramJS, which kept "exported senders" alive behind a 30-second release timer
+// that neither disconnect() nor destroy() could clear — both walked a Map with Object.values
+// and missed every entry, so a command printed "Done" and then hung for half a minute, during
+// which Ctrl-C falsely reported that nothing had been saved. teleproto replaced that pool
+// wholesale and closes it on destroy(). This stays anyway: a CLI that has written its last
+// line has nothing left to wait for, and one stray timer in any dependency is all it takes
+// for the wait to come back.
 function exitWhenFlushed(code) {
   // The empty writes exist only to borrow their callbacks: they fire after everything
   // queued earlier has flushed, so nothing is lost when stdout/stderr is not a TTY.

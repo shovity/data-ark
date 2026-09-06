@@ -10,16 +10,18 @@ const MAX_TIMER_MS = 2 ** 31 - 1
 // A request that never comes back is not the same as one that fails, and only one of the
 // two is something withRetry can do anything about.
 //
-// GramJS can leave a request queued on a sender it has quietly given up on. Its own abort
-// path is unreachable: MTProtoSender rejects pending states only when
-// `_currentRetries > _reconnectRetries`, and `reconnectRetries` has no default to compare
-// against, so the test is never true (network/MTProtoSender.js:376). Nor does the reconnect
-// itself report failure — `connect()` exhausts its attempts and returns false rather than
-// throwing, so `_reconnect()` finishes as if it had worked and puts the request back on a
-// queue with no send loop left to drain it (network/MTProtoSender.js:148,795).
+// This was written for a GramJS bug that abandoned requests outright: its abort path tested
+// `_currentRetries > _reconnectRetries` against a `reconnectRetries` of Infinity and so never
+// fired, and `_reconnect()` read a `connect()` that merely returned false as success. A real
+// network cut mid-restore froze a transfer for eleven minutes on Linux and ended it without a
+// printed line on Windows. teleproto closes both halves — `connect()` throws once its attempts
+// are spent, and `_reconnect()` catches that and rejects every pending request.
 //
-// The promise then simply sits there. Nothing throws, nothing prints, and once no handle is
-// left the process ends mid-transfer without a word — the one outcome this project forbids.
+// The deadline stays because the library was never the only way to arrive here. A server that
+// accepts a request and answers nothing, a socket that stays open with nothing coming down it:
+// there is no failure for withRetry to see, only silence. The timer is what turns that silence
+// into an error — and, deliberately not unref'd, it is also the handle that stops the event
+// loop running dry and ending a transfer without a word.
 export async function withStallTimeout(promise, ms, describe) {
   if (!(ms > 0)) return await promise
 

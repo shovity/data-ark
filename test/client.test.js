@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { LogLevel } from 'telegram/extensions/Logger.js'
+import { LogLevel } from 'teleproto/extensions/Logger.js'
 
 import {
   DELETE_BATCH_SIZE,
@@ -32,7 +32,7 @@ test('the Telegram logger is silent unless --verbose is given', () => {
   assert.equal(loud.canSend(LogLevel.WARN), true)
 })
 
-// GramJS's own deleteMessages splits the ids into batches of 100 and fires every batch at
+// teleproto's own deleteMessages splits the ids into batches of 100 and fires every batch at
 // once through Promise.all. telstore batches them itself so exactly one request is in
 // flight at a time, under the same retry and stall policy as every other network wait.
 function recordingClient({ failTimes = 0, failAlways = false, hang = false } = {}) {
@@ -82,7 +82,7 @@ test('deleteMessages keeps one request in flight at a time', async () => {
   assert.equal(client.maxInFlight(), 1)
 })
 
-// GramJS destructures `{ revoke }` with no default of its own, so a two-argument call
+// teleproto destructures `{ revoke }` with no default of its own, so a two-argument call
 // throws a TypeError before it reaches the network. revoke is passed explicitly anyway: a
 // backup must go for everyone, and that intent belongs here rather than in a dependency.
 test('deleteMessages asks Telegram to revoke, not just to hide locally', async () => {
@@ -158,7 +158,7 @@ test('deleteMessages stops at the batch that failed', async () => {
   )
 })
 
-// A request left on a sender GramJS has stopped draining never settles. Without a deadline
+// A request the server accepts and never answers settles neither way. Without a deadline
 // the delete would hold the process open forever and end without a word.
 test('deleteMessages fails when Telegram stops answering instead of waiting forever', async () => {
   const client = recordingClient({ hang: true })

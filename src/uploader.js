@@ -2,8 +2,8 @@ import { createHash, randomBytes } from 'node:crypto'
 import { read as readCallback } from 'node:fs'
 import { promisify } from 'node:util'
 
-import { Api } from 'telegram'
-import { readBigIntFromBuffer } from 'telegram/Helpers.js'
+import { Api } from 'teleproto'
+import { readBigIntFromBuffer } from 'teleproto/Helpers.js'
 
 import { DEFAULT_UPLOAD_CONCURRENCY, PART_SIZE, MAX_PARTS } from './chunking.js'
 import { withRetry } from './retry.js'
@@ -12,8 +12,8 @@ import { DEFAULT_STALL_MS, withStallTimeout } from './stall.js'
 const read = promisify(readCallback)
 
 // Telegram splits its upload API by file size: only files above 10MB may use the
-// "big" family. GramJS picks the same threshold (LARGE_FILE_THRESHOLD in
-// node_modules/telegram/client/uploads.js), and telstore follows it.
+// "big" family. teleproto picks the same threshold (LARGE_FILE_THRESHOLD in
+// node_modules/teleproto/client/uploads.js), and telstore follows it.
 export const LARGE_FILE_THRESHOLD = 10 * 1024 * 1024
 
 async function readExactly(fd, length, position) {
@@ -105,9 +105,9 @@ export async function uploadRange(client, fd, options) {
         sending.push(
           withRetry(
             () =>
-              // Same exposure as the download path: a request left on a sender GramJS has
-              // stopped draining never settles, so without a deadline this await would hold
-              // the batch open forever and the upload would end without a word.
+              // Same exposure as the download path: a request the server accepts and never
+              // answers settles neither way, so without a deadline this await would hold the
+              // batch open forever and the upload would end without a word.
               withStallTimeout(
                 client.invoke(partRequest(part, bytes)),
                 stallMs,

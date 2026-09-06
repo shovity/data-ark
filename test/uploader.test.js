@@ -5,7 +5,7 @@ import { promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-import { Api } from 'telegram'
+import { Api } from 'teleproto'
 
 import { uploadRange, LARGE_FILE_THRESHOLD } from '../src/uploader.js'
 
@@ -351,7 +351,7 @@ test('a read error mid-batch produces no unhandledRejection that hides the real 
   }
 })
 
-// The mirror of the download path's stall guard. A part left on a sender GramJS has stopped
+// The mirror of the download path's stall guard. A part left on a sender that has stopped
 // draining never resolves and never rejects, so without a deadline the batch's Promise.all
 // waits forever, nothing is printed, and the upload ends when the event loop runs dry.
 test('a part Telegram never acknowledges fails instead of waiting forever', async () => {

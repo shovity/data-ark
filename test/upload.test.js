@@ -746,6 +746,7 @@ test('a long FLOOD_WAIT is announced clearly instead of hanging in silence', asy
     if (!alreadyFlooded && request.filePart === 0) {
       alreadyFlooded = true
       const err = new Error('FLOOD_WAIT_3600')
+      err.code = 420
       err.seconds = 3600
       err.errorMessage = 'FLOOD_WAIT_3600'
       throw err
@@ -861,6 +862,7 @@ test('silent prints nothing to stderr, even on a FLOOD_WAIT', async () => {
     if (!alreadyFlooded && request.filePart === 0) {
       alreadyFlooded = true
       const err = new Error('FLOOD_WAIT_3600')
+      err.code = 420
       err.seconds = 3600
       err.errorMessage = 'FLOOD_WAIT_3600'
       throw err

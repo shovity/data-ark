@@ -1,5 +1,5 @@
-import { TelegramClient } from 'telegram'
-import { StringSession } from 'telegram/sessions/index.js'
+import { TelegramClient } from 'teleproto'
+import { StringSession } from 'teleproto/sessions/index.js'
 
 import { loadConfig, saveConfig, defaultConfigDir } from '../config.js'
 import { normalizeChatTarget } from '../chat.js'
@@ -26,11 +26,12 @@ export function describeLoginError(err) {
   return `${description} (${message})`
 }
 
-// GramJS starts an update loop the moment a client connects, and that loop only stops when
-// destroy() marks the client destroyed. disconnect() alone leaves it pinging a socket that is
-// already closed: every ping fails with "Error: TIMEOUT" and asks the sender to reconnect,
-// printed straight over the destination question login asks after signing in. Every other
-// command shuts down the same way, and login is the seam tests need to reach it.
+// An update loop starts the moment a client connects, and destroy() is what puts the whole
+// client down — the sender pools included. Under GramJS, disconnect() alone left that loop
+// pinging a closed socket, every ping failing with "Error: TIMEOUT" and asking for a
+// reconnect, printed straight over the destination question login asks after signing in.
+// Every command shuts down through destroy() for that reason, and login is the seam tests
+// need to reach it.
 const createTelegramClient = (apiId, apiHash, options) =>
   new TelegramClient(new StringSession(''), apiId, apiHash, options)
 

@@ -1,7 +1,7 @@
 import { readSecret as realReadSecret } from './prompt.js'
 import { decodeToken } from './token.js'
 
-// How a stored config becomes the three things GramJS needs. There are two shapes on disk —
+// How a stored config becomes the three things teleproto needs. There are two shapes on disk —
 // the ordinary login, and the sealed blob `login --token` writes — and this is the one place
 // that knows the difference, so `connect` stays about Telegram and the commands stay about
 // their own narrative.

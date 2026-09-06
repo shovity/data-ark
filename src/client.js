@@ -1,14 +1,14 @@
-import { Api, TelegramClient } from 'telegram'
-import { Logger } from 'telegram/extensions/index.js'
-import { LogLevel } from 'telegram/extensions/Logger.js'
-import { StringSession } from 'telegram/sessions/index.js'
+import { Api, TelegramClient } from 'teleproto'
+import { Logger } from 'teleproto/extensions/index.js'
+import { LogLevel } from 'teleproto/extensions/Logger.js'
+import { StringSession } from 'teleproto/sessions/index.js'
 
 import { manifestFileName } from './manifest.js'
 import { withRetry } from './retry.js'
 import { unlockConfig } from './session.js'
 import { DEFAULT_STALL_MS, withStallTimeout } from './stall.js'
 
-// GramJS narrates its version, every connection and every disconnect at info level, and
+// teleproto narrates its version, every connection and every disconnect at info level, and
 // those timestamped lines land in the middle of the progress bar. The client reads this
 // logger before it prints anything, so LogLevel.NONE silences all of it; --verbose asks
 // for the running commentary back when a connection needs diagnosing.
@@ -58,7 +58,7 @@ export async function readMessageBytes(client, message) {
 }
 
 // The one place telstore removes messages from a chat, and the mirror of searchDocuments
-// above. GramJS has its own deleteMessages, and it is the right thing to call — it resolves
+// above. teleproto has its own deleteMessages, and it is the right thing to call — it resolves
 // the peer and picks between channels.DeleteMessages and messages.DeleteMessages, which is
 // exactly the choice a fake client would never catch us getting wrong.
 //
@@ -87,7 +87,7 @@ export async function deleteMessages(client, peer, ids, options = {}) {
 
     await withRetry(
       () =>
-        // The options object is not optional: GramJS destructures `{ revoke }` with no
+        // The options object is not optional: teleproto destructures `{ revoke }` with no
         // default of its own, so a two-argument call throws a TypeError before it ever
         // reaches the network. revoke is passed explicitly anyway — a backup has to go for
         // everyone who can see the chat, and that intent belongs in our code rather than in

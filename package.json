@@ -37,6 +37,6 @@
     "test": "node --test 'test/**/*.test.js'"
   },
   "dependencies": {
-    "telegram": "^2.26.22"
+    "teleproto": "^1.229.0"
   }
 }

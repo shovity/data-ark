@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { read as readCallback, write as writeCallback } from 'node:fs'
 import { promisify } from 'node:util'
 
-import { returnBigInt } from 'telegram/Helpers.js'
+import { returnBigInt } from 'teleproto/Helpers.js'
 
 import { DEFAULT_DOWNLOAD_CONCURRENCY, PART_SIZE, SLICE_SIZE } from './chunking.js'
 import { withRetry } from './retry.js'
@@ -105,10 +105,14 @@ export async function downloadToFile(
       // Iterated by hand rather than with `for await` so each part can be given a deadline:
       // a stalled stream yields nothing and raises nothing, and only a race against a timer
       // turns that silence into an error withRetry can act on. Nothing is lost by stepping
-      // outside `for await` — GramJS's download iterator exposes `next` alone, so breaking
+      // outside `for await` — teleproto's download iterator exposes `next` alone, so breaking
       // out of the loop never closed anything either.
-      const stream = client.iterDownload({
-        file: message.media,
+      //
+      // The media goes in its own argument, not inside the options: teleproto takes
+      // `iterDownload(file, params)` where GramJS took a single `{ file, ... }` object, and
+      // the options object arriving where the file belongs is not something a fake client
+      // would ever refuse — it fails only against the real one, at getFileInfo.
+      const stream = client.iterDownload(message.media, {
         offset: returnBigInt(start + done),
         requestSize: PART_SIZE,
       })

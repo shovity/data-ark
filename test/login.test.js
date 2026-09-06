@@ -67,7 +67,7 @@ function fakeClient(calls) {
   }
 }
 
-// GramJS starts an update loop on connect that runs until _destroyed is set, and only
+// teleproto starts an update loop on connect that runs until _destroyed is set, and only
 // destroy() sets it — disconnect() leaves it pinging a socket that is already closed. Every
 // ping then fails with "Error: TIMEOUT" and asks the sender to reconnect, printed on top of
 // the destination prompt that login asks after signing in.

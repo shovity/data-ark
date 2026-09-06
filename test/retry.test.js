@@ -59,8 +59,9 @@ test('FLOOD_WAIT is honoured for exactly the seconds the server asks for', async
       calls += 1
       if (calls === 1) {
         const err = new Error('A wait of 42 seconds is required (caused by upload.SaveBigFilePart)')
+        err.code = 420
+        err.errorMessage = 'FLOOD_WAIT_42'
         err.seconds = 42
-        err.errorMessage = 'FLOOD_WAIT'
         throw err
       }
       return 'done'
@@ -96,8 +97,9 @@ test('a FLOOD_WAIT longer than the cap is still waited out in full', async () =>
       calls += 1
       if (calls === 1) {
         const err = new Error('A wait of 3600 seconds is required')
+        err.code = 420
+        err.errorMessage = 'FLOOD_WAIT_3600'
         err.seconds = 3600
-        err.errorMessage = 'FLOOD_WAIT'
         throw err
       }
       return 'done'
@@ -140,4 +142,54 @@ test('onRetry is called with the attempt number and the delay', async () => {
   )
 
   assert.deepEqual(events, [['network error', 1, 100]])
+})
+
+// Telegram answers "wait this long" with more than one error name, and every one of them
+// arrives as code 420 carrying the seconds. Keying on the name instead means the exponential
+// backoff asks again while the ban is still running, which earns a longer one — so the wait
+// is read from the code and the seconds, not from how the message is spelled.
+test('any 420 that names its seconds is waited out in full, not just FLOOD_WAIT', async () => {
+  const delays = []
+  let calls = 0
+
+  await withRetry(
+    async () => {
+      calls += 1
+      if (calls === 1) {
+        const err = new Error('Slow mode is enabled (caused by messages.SendMedia)')
+        err.code = 420
+        err.errorMessage = 'SLOW_MODE_WAIT_30'
+        err.seconds = 30
+        throw err
+      }
+      return 'done'
+    },
+    { baseDelayMs: 100, sleep: fakeSleep(delays) },
+  )
+
+  assert.deepEqual(delays, [30000])
+})
+
+// A 420 with no seconds on it (a frozen account, say) has nothing to wait for. Reading a
+// missing field as zero would retry instantly eight times over and report the account
+// problem as a network one.
+test('a 420 with no seconds falls back to the ordinary backoff', async () => {
+  const delays = []
+  let calls = 0
+
+  await withRetry(
+    async () => {
+      calls += 1
+      if (calls === 1) {
+        const err = new Error('The account is frozen (caused by messages.SendMedia)')
+        err.code = 420
+        err.errorMessage = 'FROZEN_METHOD_INVALID'
+        throw err
+      }
+      return 'done'
+    },
+    { baseDelayMs: 100, sleep: fakeSleep(delays) },
+  )
+
+  assert.deepEqual(delays, [100])
 })

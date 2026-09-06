@@ -50,7 +50,7 @@ function fakeClient(backup, { hideMessageId = null, corruptMessageId = null, tru
     async getMessage(peer, msgId) {
       return visible.find((m) => m.id === msgId) ?? null
     },
-    iterDownload({ file }) {
+    iterDownload(file) {
       let bytes = file.bytes
       if (file.id === corruptMessageId) bytes = randomBytes(file.bytes.length)
       if (file.id === truncateMessageId) bytes = file.bytes.subarray(0, file.bytes.length - 10)
@@ -73,7 +73,7 @@ function deps(client, configDir) {
     downloadChunk: async (c, message, handle, offset, onProgress) => {
       const hash = createHash('sha256')
       let written = 0
-      for await (const buf of c.iterDownload({ file: { id: message.id, bytes: message.bytes } })) {
+      for await (const buf of c.iterDownload({ id: message.id, bytes: message.bytes })) {
         await handle.write(buf, 0, buf.length, offset + written)
         hash.update(buf)
         written += buf.length
@@ -203,7 +203,7 @@ test('chunk progress tracks the downloaded data instead of sticking at 0%', asyn
   const message = { id: 1, media: { document } }
 
   const client = {
-    iterDownload({ file }) {
+    iterDownload(file) {
       assert.equal(file, message.media)
       return (async function* () {
         yield bytes.subarray(0, 300)
@@ -435,7 +435,7 @@ test('realDownloadChunk carries the retry options through to the downloader', as
   let failed = false
 
   const client = {
-    iterDownload(params) {
+    iterDownload(file, params) {
       const from = Number(params.offset ?? 0)
       return (async function* () {
         if (!failed) {

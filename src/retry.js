@@ -10,8 +10,14 @@ function defaultSleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+// Every "wait this long" answer Telegram gives arrives as code 420 with the seconds on the
+// error itself — FLOOD_WAIT_n, SLOW_MODE_WAIT_n and the rest. Those two fields are what this
+// reads, not how the message is spelled: under GramJS every flood error carried the literal
+// errorMessage "FLOOD", so a check for "FLOOD_WAIT" in it matched nothing and each one was
+// retried on the ordinary backoff — asking again inside a ban that was still running.
+// A 420 with no seconds (a frozen account) has nothing to wait for and takes the backoff.
 function floodWaitSeconds(err) {
-  if (typeof err?.seconds === 'number' && String(err?.errorMessage ?? '').includes('FLOOD_WAIT')) {
+  if (err?.code === 420 && typeof err.seconds === 'number') {
     return err.seconds
   }
   return null

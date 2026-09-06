@@ -19,8 +19,9 @@ There is no build step and no linter. `npm test` is the whole gate.
 ## Constraints
 
 - Node 18+, pure ESM, no TypeScript, no transpilation.
-- Exactly one runtime dependency: `telegram` (GramJS). Adding a second one needs
-  a reason that survives scrutiny.
+- Exactly one runtime dependency: `teleproto`. Adding a second one needs a reason
+  that survives scrutiny. It is the maintained fork of GramJS, which npm deprecated
+  in favour of it; the session string format is unchanged, so nobody logs in again.
 - Tests use the built-in `node:test` runner only.
 - Style follows the existing files: no semicolons, single quotes, two-space indent.
 
@@ -40,17 +41,19 @@ for this and must not be relaxed to make a test pass:
 - `runRestore` writes to `<target>.partial`, verifies every chunk's size and sha256
   plus the final file length, and renames only after all of it passes.
 
-The rule also covers a transfer that stops without failing. GramJS can leave a request on a
-sender it has quietly given up reconnecting, and that promise never settles either way: its
-own abort path is unreachable (`MTProtoSender` rejects pending states only when
-`_currentRetries > _reconnectRetries`, and `reconnectRetries` has no default to compare
-against), and `_reconnect()` treats a `connect()` that merely returned false as success. A
-real network cut mid-restore was reproduced this way: on Linux the transfer froze for eleven
-minutes and then recovered, on Windows the process ended mid-chunk without printing a line.
-`src/stall.js` is what makes that impossible — every network wait carries a 60-second
-deadline, so silence becomes an error `withRetry` can announce and act on. Its timer is
-deliberately not `unref`'d: it is the handle that keeps the event loop from running dry and
-exiting without a word.
+The rule also covers a transfer that stops without failing. `src/stall.js` was written for a
+GramJS bug that abandoned requests outright — its abort path compared `_currentRetries` against
+a `reconnectRetries` of Infinity and so never fired, and `_reconnect()` read a `connect()` that
+merely returned false as success. A real network cut mid-restore was reproduced this way: on
+Linux the transfer froze for eleven minutes and then recovered, on Windows the process ended
+mid-chunk without printing a line. teleproto closes both halves — `connect()` throws once its
+attempts are spent, and `_reconnect()` catches that and rejects every pending request.
+
+The deadline stays, because the library was never the only road here. A server that accepts a
+request and answers nothing leaves no failure for `withRetry` to see, only silence; every
+network wait carries 60 seconds of it before that counts as an error. The timer is deliberately
+not `unref`'d: it is also the handle that keeps the event loop from running dry and exiting
+without a word.
 
 A session token is untrusted input in exactly that category, and it arrives through a chat.
 Authentication proves whoever made it knew the passphrase, not that they made it correctly, so
@@ -115,8 +118,8 @@ that is the one number nobody may guess at. A manifest whose body names a differ
 refused for the same reason — a file renamed in the chat would otherwise have telstore destroy
 another backup's chunks while reporting this one.
 
-`src/client.js` batches the ids itself rather than handing all of them to GramJS at once.
-GramJS's `deleteMessages` splits them into hundreds and fires every batch through
+`src/client.js` batches the ids itself rather than handing all of them to teleproto at once.
+Its `deleteMessages` splits them into hundreds and fires every batch through
 `Promise.all`, which would put a hundred requests in flight with none of them under
 `withRetry` or the stall deadline. Its peer resolution and its choice between
 `channels.DeleteMessages` and `messages.DeleteMessages` are still what telstore calls, because
@@ -207,10 +210,22 @@ keep that seam rather than importing the real client directly.
 ## What the test suite cannot see
 
 Every automated test talks to a fake client that accepts whatever it is given, so
-the suite cannot catch a mismatch with GramJS's real API surface. This has bitten
-once already: `downloadToFile` passed `message.media.document` where GramJS needs
-`message.media`, and 142 tests stayed green while restore was completely broken in
-a published release.
+the suite cannot catch a mismatch with teleproto's real API surface. This has bitten
+twice. First `downloadToFile` passed `message.media.document` where the library needs
+`message.media`, and 142 tests stayed green while restore was completely broken in a
+published release. Then the move off GramJS changed `iterDownload` from one options
+object to `(file, params)`, and 459 tests stayed green against a call the real client
+refuses outright — caught only by a test that drives the real `iterDownload`, which is
+now what `test/downloader.test.js` does with the network stubbed and nothing else.
+
+A fabricated error shape is the same blindness wearing different clothes. `test/retry.test.js`
+built its flood errors by hand, and under GramJS no real error ever looked like them: every
+flood error carried the literal `errorMessage` "FLOOD", so `floodWaitSeconds` matched nothing
+and each `FLOOD_WAIT` was retried on the ordinary backoff — asking again inside a ban that was
+still running, which is how a ban gets longer. teleproto's `RPCMessageToError` keeps the
+server's own string, and `floodWaitSeconds` now reads the code and the seconds rather than the
+spelling. `test/smoke-import.test.js` holds the two together with an error built the way
+`MTProtoSender` builds one.
 
 The same blindness applies to terminals, and it cost time here. `src/prompt.js` was first
 written to open a readline per question, and its tests passed against a fake stream that takes
@@ -234,9 +249,9 @@ clears one line only, so a mask that wrapped would leave stale asterisks on the 
 pty check above now also confirms that asterisks appear as the line is typed, that they come back
 when a character is erased, and that the secret itself never does.
 
-When you touch code that hands an object to GramJS, assert against GramJS's own
-helper (as `test/downloader.test.js` does with `getFileInfo`) rather than against
-the fake, and exercise both threshold branches against a real account before
+When you touch code that hands an object to teleproto, assert against teleproto's own
+helper (as `test/downloader.test.js` does with `getFileInfo` and `iterDownload`) rather
+than against the fake, and exercise both threshold branches against a real account before
 releasing — upload and restore a file large enough to need several chunks above
 10MB, plus one below it, and compare sha256 both ways.
 

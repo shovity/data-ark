@@ -46,7 +46,7 @@ function isPlainObject(value) {
 // A token is untrusted input in the same category as a manifest or a state file. Opening one
 // proves whoever made it knew the passphrase, not that they made it correctly — and the
 // unprotected format proves nothing at all. An apiId of undefined does not throw here; it
-// reaches GramJS and fails much later as something that reads like a network problem.
+// reaches teleproto and fails much later as something that reads like a network problem.
 export function checkTokenBundle(bundle) {
   if (!isPlainObject(bundle)) {
     throw new Error(

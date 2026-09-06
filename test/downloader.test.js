@@ -6,9 +6,9 @@ import os from 'node:os'
 import path from 'node:path'
 
 import bigInt from 'big-integer'
-import { Api } from 'telegram'
-import { getFileInfo } from 'telegram/Utils.js'
-import { iterDownload } from 'telegram/client/downloads.js'
+import { Api } from 'teleproto'
+import { getFileInfo } from 'teleproto/Utils.js'
+import { iterDownload } from 'teleproto/client/downloads.js'
 
 import { downloadToFile } from '../src/downloader.js'
 import { SLICE_SIZE } from '../src/chunking.js'
@@ -24,8 +24,8 @@ function fakeMessage(size, document = { id: 'doc-1' }) {
 function fakeClient(content, { partSize = 100 } = {}) {
   return {
     calls: [],
-    iterDownload(params) {
-      this.calls.push(params)
+    iterDownload(file, params) {
+      this.calls.push({ ...params, file })
       const from = Number(params.offset ?? 0)
 
       return (async function* () {
@@ -35,6 +35,46 @@ function fakeClient(content, { partSize = 100 } = {}) {
       })()
     },
   }
+}
+
+// Drive teleproto's own iterDownload rather than the fake: it is the only place telstore's
+// offset meets the code that builds the real upload.GetFile. Two rounds, because the real
+// loop does big-integer arithmetic on the offset between requests (`offset.add`) and a
+// single round would never reach it. Returns the requests the real code built.
+async function realGetFileRequests(offset, { size, requestSize = 512 * 1024 }) {
+  const document = new Api.Document({
+    id: bigInt(123),
+    accessHash: bigInt(456),
+    fileReference: Buffer.alloc(8),
+    date: 0,
+    mimeType: 'application/octet-stream',
+    size: bigInt(size),
+    dcId: 2,
+    attributes: [new Api.DocumentAttributeFilename({ fileName: 'telstore.part0001' })],
+  })
+
+  const requests = []
+  const client = {
+    _log: { info() {}, debug() {}, warn() {} },
+    async invoke(request) {
+      requests.push(request)
+      // A full part first, so the loop goes round again and advances the offset; then a
+      // short one, which is how the real stream says it has reached the end.
+      return { bytes: Buffer.alloc(requests.length === 1 ? requestSize : 0) }
+    },
+  }
+
+  const parts = iterDownload(client, new Api.MessageMediaDocument({ document }), {
+    offset,
+    requestSize,
+  })[Symbol.asyncIterator]()
+
+  for (;;) {
+    const { done } = await parts.next()
+    if (done) break
+  }
+
+  return requests
 }
 
 async function tempFd(size) {
@@ -84,9 +124,9 @@ test("passes the message's media to iterDownload", async () => {
 })
 
 test('whatever is passed to iterDownload must cast to an InputFileLocation', async () => {
-  // GramJS can only derive a location from a MessageMediaDocument, not from a bare
+  // teleproto can only derive a location from a MessageMediaDocument, not from a bare
   // Document. The fake client accepts anything, so it cannot catch this mismatch —
-  // we have to ask GramJS's own getFileInfo.
+  // we have to ask teleproto's own getFileInfo.
   const { handle } = await tempFd(10)
   const document = new Api.Document({
     id: bigInt(123),
@@ -161,8 +201,8 @@ function flakyClient(content, { partSize = 100, failures = 1, failAfterParts = 2
 
   return {
     calls: [],
-    iterDownload(params) {
-      this.calls.push(params)
+    iterDownload(file, params) {
+      this.calls.push({ ...params, file })
       const from = Number(params.offset ?? 0)
       const breakAfter = left > 0 ? (left -= 1, failAfterParts) : Infinity
 
@@ -239,10 +279,10 @@ test('a chunk that does not start the file resumes at a document offset, not a f
   assert.deepEqual((await fs.readFile(file)).subarray(500), content, 'and lands 500 bytes into the file')
 })
 
-test('the resume offset is one GramJS itself accepts', async () => {
-  // iterDownload does big-integer arithmetic on `offset` (offset.divide, offset.add), so a
-  // plain JS number sails through the fake client and throws against the real one. Ask
-  // GramJS rather than the fake: hand its own iterDownload the offset ours produced.
+test('the resume offset is one teleproto itself accepts', async () => {
+  // The fake client above takes any offset at all. Only the real iterDownload proves the
+  // number telstore resumed at is the number that reaches upload.GetFile, and that the real
+  // loop can go on advancing from it.
   const content = randomBytes(1000)
   const { handle } = await tempFd(1000)
   const client = flakyClient(content)
@@ -250,26 +290,12 @@ test('the resume offset is one GramJS itself accepts', async () => {
   await downloadToFile(client, fakeMessage(1000), handle.fd, { offset: 0, retryOptions: instantRetry })
   await handle.close()
 
-  const document = new Api.Document({
-    id: bigInt(123),
-    accessHash: bigInt(456),
-    fileReference: Buffer.alloc(8),
-    date: 0,
-    mimeType: 'application/octet-stream',
-    size: bigInt(1000),
-    dcId: 2,
-    attributes: [new Api.DocumentAttributeFilename({ fileName: 'telstore.part0001' })],
-  })
-  const logger = { info() {}, debug() {}, warn() {} }
+  const resumed = client.calls[1].offset
+  const requests = await realGetFileRequests(resumed, { size: 1000 })
 
-  const iter = iterDownload(
-    { _log: logger },
-    { file: new Api.MessageMediaDocument({ document }), offset: client.calls[1].offset, requestSize: 512 * 1024 },
-  )
-
-  // A non-zero offset has to route through the iterator that can start mid-document;
-  // the direct one only ever begins at zero.
-  assert.equal(iter.constructor.name, 'GenericDownloadIter')
+  assert.ok(requests[0] instanceof Api.upload.GetFile)
+  assert.equal(requests[0].offset.toString(), resumed.toString())
+  assert.equal(requests[1].offset.toString(), String(Number(resumed.toString()) + 512 * 1024))
 })
 
 test('a stream that never gets anywhere gives up rather than retrying forever', async () => {
@@ -393,8 +419,8 @@ test('a slice that fails resumes at its own watermark', async () => {
 
   const client = {
     calls: [],
-    iterDownload(params) {
-      this.calls.push(params)
+    iterDownload(file, params) {
+      this.calls.push({ ...params, file })
       const from = Number(params.offset ?? 0)
       const breakAfter = from === 0 && !broken ? ((broken = true), 2) : Infinity
 
@@ -474,7 +500,7 @@ test('slices are fetched concurrently, not one after another', async () => {
   let peak = 0
 
   const client = {
-    iterDownload(params) {
+    iterDownload(file, params) {
       const from = Number(params.offset ?? 0)
       inFlight += 1
       peak = Math.max(peak, inFlight)
@@ -512,7 +538,7 @@ test('a chunk of one slice does not start eight workers', async () => {
   const { handle } = await tempFd(1000)
 
   const client = {
-    iterDownload(params) {
+    iterDownload(file, params) {
       const from = Number(params.offset ?? 0)
       return (async function* () {
         yield content.subarray(from)
@@ -551,7 +577,7 @@ test('one slice failing for good fails the chunk and reports that error', async 
   const { handle } = await tempFd(content.length)
 
   const client = {
-    iterDownload(params) {
+    iterDownload(file, params) {
       const from = Number(params.offset ?? 0)
       return (async function* () {
         if (from >= SLICE_SIZE && from < SLICE_SIZE * 2) throw new Error('slice two is gone')
@@ -583,7 +609,7 @@ test('first error wins, by wall-clock time, not by slice index', async () => {
   const { handle } = await tempFd(content.length)
 
   const client = {
-    iterDownload(params) {
+    iterDownload(file, params) {
       const from = Number(params.offset ?? 0)
       const inSliceOne = from >= SLICE_SIZE && from < SLICE_SIZE * 2
       const inSliceThree = from >= SLICE_SIZE * 3
@@ -621,7 +647,7 @@ test('the pool stops handing out slices once one has failed', async () => {
   const requested = new Set()
 
   const client = {
-    iterDownload(params) {
+    iterDownload(file, params) {
       const from = Number(params.offset ?? 0)
       requested.add(from)
 
@@ -668,7 +694,7 @@ test('a slice retries mid-stream while at least three other slices stay in fligh
   let othersInFlightAtThrow = null
 
   const client = {
-    iterDownload(params) {
+    iterDownload(file, params) {
       const from = Number(params.offset ?? 0)
       const sliceIndex = Math.floor(from / SLICE_SIZE)
       const inSliceTwo = sliceIndex === 2
@@ -711,9 +737,9 @@ test('a slice retries mid-stream while at least three other slices stay in fligh
   )
 })
 
-test('a mid-document slice offset is one GramJS itself accepts', async () => {
-  // iterDownload does big-integer arithmetic on `offset` (offset.divide, offset.add), so a
-  // plain JS number sails through the fake client and throws against the real one.
+test('a mid-document slice offset is one teleproto itself accepts', async () => {
+  // Same reason as the resume offset above, for the offset a second slice starts at: the
+  // fake would accept a wrong one, the real request builder is what has to see it.
   const content = randomBytes(SLICE_SIZE + 1000)
   const { handle } = await tempFd(content.length)
   const client = fakeClient(content, { partSize: 512 * 1024 })
@@ -721,33 +747,17 @@ test('a mid-document slice offset is one GramJS itself accepts', async () => {
   await downloadToFile(client, fakeMessage(content.length), handle.fd, { offset: 0, concurrency: 1 })
   await handle.close()
 
-  const document = new Api.Document({
-    id: bigInt(123),
-    accessHash: bigInt(456),
-    fileReference: Buffer.alloc(8),
-    date: 0,
-    mimeType: 'application/octet-stream',
-    size: bigInt(content.length),
-    dcId: 2,
-    attributes: [new Api.DocumentAttributeFilename({ fileName: 'telstore.part0001' })],
-  })
+  const sliceOffset = client.calls[1].offset
+  const requests = await realGetFileRequests(sliceOffset, { size: content.length })
 
-  const iter = iterDownload(
-    { _log: { info() {}, debug() {}, warn() {} } },
-    {
-      file: new Api.MessageMediaDocument({ document }),
-      offset: client.calls[1].offset,
-      requestSize: 512 * 1024,
-    },
-  )
-
-  // A non-zero offset has to route through the iterator that can start mid-document; the
-  // direct one only ever begins at zero.
-  assert.equal(iter.constructor.name, 'GenericDownloadIter')
+  assert.equal(sliceOffset.toString(), String(SLICE_SIZE), 'the second slice starts where the first ended')
+  assert.ok(requests[0] instanceof Api.upload.GetFile)
+  assert.equal(requests[0].offset.toString(), sliceOffset.toString())
+  assert.equal(requests[1].offset.toString(), String(SLICE_SIZE + 512 * 1024))
 })
 
-// A hung request is not a slow one: GramJS can leave a request in a send queue nothing is
-// draining, and that promise never settles either way. Without a stall guard the await
+// A hung request is not a slow one: a request the server accepts and never answers settles
+// neither way, and no library reports that as a failure. Without a stall guard the await
 // never returns, withRetry never sees an error, and the restore ends without a word.
 test('a stream that stops yielding fails instead of waiting forever', async () => {
   const { handle } = await tempFd(1500)
@@ -782,7 +792,7 @@ test('a slow but steady stream is not mistaken for a stalled one', async () => {
   const { file, handle } = await tempFd(1500)
   let streams = 0
   const client = {
-    iterDownload({ offset }) {
+    iterDownload(file, { offset }) {
       streams += 1
       const from = Number(offset ?? 0)
 
@@ -827,4 +837,44 @@ test('downloadToFile refuses a worker count below one instead of reporting a pha
   }
 
   await handle.close()
+})
+
+// Every fake above accepts whatever downloadToFile hands it, so not one of them can catch a
+// call the real client would refuse — the blindness that once shipped a release where
+// restore was broken end to end while the suite stayed green. This wires downloadToFile
+// into teleproto's own iterDownload with nothing but the network stubbed out, which is the
+// only place the shape of that call is actually checked.
+test('downloadToFile calls iterDownload the way teleproto declares it', async () => {
+  const content = randomBytes(1500)
+  const { file, handle } = await tempFd(1500)
+
+  const document = new Api.Document({
+    id: bigInt(123),
+    accessHash: bigInt(456),
+    fileReference: Buffer.alloc(8),
+    date: 0,
+    mimeType: 'application/octet-stream',
+    size: bigInt(content.length),
+    dcId: 2,
+    attributes: [new Api.DocumentAttributeFilename({ fileName: 'telstore.part0001' })],
+  })
+
+  const client = {
+    _log: { info() {}, debug() {}, warn() {} },
+    async invoke(request) {
+      const at = Number(request.offset.toString())
+      return { bytes: content.subarray(at, at + request.limit) }
+    },
+    iterDownload(...args) {
+      return iterDownload(this, ...args)
+    },
+  }
+
+  const message = { id: 999, media: new Api.MessageMediaDocument({ document }) }
+  const result = await downloadToFile(client, message, handle.fd, { offset: 0 })
+
+  await handle.close()
+  assert.equal(result.size, content.length)
+  assert.equal(result.sha256, createHash('sha256').update(content).digest('hex'))
+  assert.deepEqual(await fs.readFile(file), content)
 })
