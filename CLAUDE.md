@@ -52,6 +52,13 @@ deadline, so silence becomes an error `withRetry` can announce and act on. Its t
 deliberately not `unref`'d: it is the handle that keeps the event loop from running dry and
 exiting without a word.
 
+Manifests and state files are both untrusted input — one is downloaded from a chat, the
+other is JSON on disk that a truncated write or a hand edit can mangle — so neither is
+believed before its numbers are checked. `parseManifest` and `planChunks` reject anything
+that is not a whole number of bytes rather than doing arithmetic on it: a string or a null
+does not throw, it produces a comparison that rejects for the wrong reason, or a loop that
+never advances and spins until the process runs out of memory.
+
 The same rule covers the local record of a backup, because losing it strands chunks in the
 chat that nothing can point at any more: `runUpload` refuses a `--chunk-size` that differs
 from the unfinished backup's own (and resumes at that size when the flag is absent) rather
@@ -100,6 +107,10 @@ releasing — upload and restore a file large enough to need several chunks abov
 
 - 512KB parts, at most 4000 per file → an arithmetic ceiling near 1953MB, so
   `MAX_CHUNK_SIZE` is 1950MB and the default chunk is 1800MB.
+- `MAX_CHUNKS` is 10000, counted before the plan is built. Every chunk is one message in the
+  chat and one entry in the manifest, so a longer plan describes a backup nobody could use —
+  and the only way to ask for one is a chunk size picked by mistake, where building it first
+  would mean an out-of-memory crash instead of an answer.
 - Files above 10MB must use `SaveBigFilePart` / `InputFileBig`; at or below that,
   `SaveFilePart` / `InputFile`. Both branches need real-account coverage.
 - `FLOOD_WAIT` is honoured for exactly the seconds the server asks for, and any

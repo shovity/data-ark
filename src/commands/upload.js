@@ -128,6 +128,19 @@ export async function runUpload(filePath, options = {}, deps = {}) {
   }
 
   const chunkSize = state ? state.chunkSize : (requestedChunkSize ?? DEFAULT_CHUNK_SIZE)
+
+  // A resumed upload takes its chunk size off disk, and nothing validated that file on the
+  // way in. planChunks will refuse an unusable one, but its message is about chunk sizes and
+  // would send the reader looking for a --chunk-size flag they never passed.
+  if (state && (!Number.isSafeInteger(chunkSize) || chunkSize < 1)) {
+    throw new Error(
+      `The record of this unfinished backup gives a chunk size of ${JSON.stringify(chunkSize)}, ` +
+        `which cannot be used. ${stateFile(key, configDir)} is damaged — delete it and run ` +
+        'again to start a new backup, which leaves the chunks already sent sitting in the ' +
+        'chat with nothing to point at them.',
+    )
+  }
+
   const chunks = planChunks(stat.size, chunkSize)
   const resuming = Boolean(state)
 

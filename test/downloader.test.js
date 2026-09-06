@@ -805,3 +805,26 @@ test('a slow but steady stream is not mistaken for a stalled one', async () => {
   assert.equal(streams, 1)
   assert.deepEqual(await fs.readFile(file), content)
 })
+
+// The pool is `Array.from({ length: Math.min(concurrency, sliceCount) }, worker)`. At zero
+// that builds no workers at all, so Promise.all resolves at once with nothing downloaded,
+// `failed` is still false, and the function returns a digest of whatever the file already
+// held — a success report for a chunk it never fetched.
+test('downloadToFile refuses a worker count below one instead of reporting a phantom success', async () => {
+  const content = randomBytes(2000)
+  const { handle } = await tempFd(2000)
+
+  for (const concurrency of [0, -1, 1.5, NaN]) {
+    await assert.rejects(
+      () =>
+        downloadToFile(fakeClient(content), fakeMessage(2000), handle.fd, {
+          offset: 0,
+          concurrency,
+        }),
+      /at least one|whole number/i,
+      `concurrency ${concurrency} must not be accepted`,
+    )
+  }
+
+  await handle.close()
+})

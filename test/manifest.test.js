@@ -150,3 +150,51 @@ test('parseManifest accepts a correct uniform layout', () => {
 
   assert.deepEqual(parseManifest(JSON.stringify(m)), m)
 })
+
+// The manifest is downloaded from a chat, so it is untrusted input. Every rejection has to
+// name what is actually wrong with it: a raw TypeError tells the user their file is broken
+// in a way only a developer can read.
+test('parseManifest names a chunk entry that is not an object', () => {
+  const text = JSON.stringify({
+    v: 1,
+    id: 'x',
+    name: 'n',
+    size: 100,
+    chunkSize: 50,
+    chunks: [{ i: 0, msgId: 1, size: 50, sha256: 'a' }, null],
+  })
+
+  assert.throws(() => parseManifest(text), /chunk 2 .*not|entry 2|is not an object/i)
+})
+
+// The old code compared a numeric total against a string size with !==, so it rejected the
+// manifest — but the message read "Chunk sizes add up to 100, but the manifest records a
+// file size of 100", which sends the reader hunting for a difference that is not there.
+test('parseManifest says the size is the wrong type rather than printing it twice', () => {
+  const text = JSON.stringify({
+    v: 1,
+    id: 'x',
+    name: 'n',
+    size: '100',
+    chunkSize: 50,
+    chunks: [
+      { i: 0, msgId: 1, size: 50, sha256: 'a' },
+      { i: 1, msgId: 2, size: 50, sha256: 'b' },
+    ],
+  })
+
+  assert.throws(() => parseManifest(text), /whole number/)
+})
+
+test('parseManifest rejects a chunk size that is not a whole number', () => {
+  const text = JSON.stringify({
+    v: 1,
+    id: 'x',
+    name: 'n',
+    size: 100,
+    chunkSize: 0,
+    chunks: [{ i: 0, msgId: 1, size: 100, sha256: 'a' }],
+  })
+
+  assert.throws(() => parseManifest(text), /whole number/)
+})

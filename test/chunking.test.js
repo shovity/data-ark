@@ -74,3 +74,34 @@ test('planChunks: a file exactly one chunk long', () => {
 test('planChunks rejects an empty file', () => {
   assert.throws(() => planChunks(0, 10), /empty/)
 })
+
+// A chunk size of zero makes `offset += chunkSize` stand still, and the loop below never
+// reaches fileSize. That is not hypothetical: chunkSize is read straight out of a state file
+// on disk when an upload resumes, so a truncated or hand-edited record hangs the CLI with no
+// output at all — the one failure this project refuses to produce.
+test('planChunks refuses a chunk size that would never advance', () => {
+  for (const chunkSize of [0, -1, 1.5, NaN, Infinity, '1800', null, undefined]) {
+    assert.throws(
+      () => planChunks(10000, chunkSize),
+      /whole number of bytes/,
+      `planChunks(10000, ${JSON.stringify(chunkSize)}) must not be accepted`,
+    )
+  }
+})
+
+// `--chunk-size 1` on a 4GB file asks for four billion chunk objects, which is an
+// out-of-memory crash rather than an answer. The limit is checked by arithmetic before the
+// loop builds anything, so the test can prove it with twenty thousand instead of four
+// billion.
+test('planChunks refuses a plan with more chunks than a backup can hold', () => {
+  assert.throws(() => planChunks(20_000, 1), /10000 chunks/)
+  assert.equal(planChunks(10_000, 1).length, 10_000, 'the limit itself is allowed')
+})
+
+test('planChunks still accepts a last chunk smaller than the rest', () => {
+  assert.deepEqual(planChunks(2500, 1000), [
+    { i: 0, offset: 0, length: 1000 },
+    { i: 1, offset: 1000, length: 1000 },
+    { i: 2, offset: 2000, length: 500 },
+  ])
+})

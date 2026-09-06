@@ -2,6 +2,11 @@
 // that cannot deliver 8KB/s could not finish a multi-gigabyte restore anyway.
 export const DEFAULT_STALL_MS = 60_000
 
+// setTimeout stores its delay in a 32-bit signed integer. Node's answer to a larger one is
+// to warn and fire after a single tick, so a deadline meant to be more patient becomes the
+// least patient one there is.
+const MAX_TIMER_MS = 2 ** 31 - 1
+
 // A request that never comes back is not the same as one that fails, and only one of the
 // two is something withRetry can do anything about.
 //
@@ -18,6 +23,13 @@ export const DEFAULT_STALL_MS = 60_000
 export async function withStallTimeout(promise, ms, describe) {
   if (!(ms > 0)) return await promise
 
+  if (ms > MAX_TIMER_MS) {
+    throw new Error(
+      `A stall deadline of ${ms}ms is out of range: a timer holds at most ${MAX_TIMER_MS}ms, ` +
+        'and a larger one fires after a single tick rather than waiting.',
+    )
+  }
+
   let timer
 
   try {
@@ -27,7 +39,19 @@ export async function withStallTimeout(promise, ms, describe) {
         // Deliberately not unref'd. This timer is the only thing keeping the event loop
         // alive while a request is outstanding, so a stall ends in this rejection instead
         // of in Node running out of work and exiting silently.
-        timer = setTimeout(() => reject(new Error(describe())), ms)
+        timer = setTimeout(() => {
+          // A throw inside a timer callback is an uncaught exception, which ends the process
+          // rather than the request. Building the message must never be able to do that.
+          let message
+
+          try {
+            message = describe()
+          } catch (err) {
+            message = `A network wait went past ${ms}ms, and describing it failed: ${err.message}`
+          }
+
+          reject(new Error(message))
+        }, ms)
       }),
     ])
   } finally {

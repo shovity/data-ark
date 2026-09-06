@@ -57,7 +57,39 @@ export function parseManifest(input) {
     throw new Error('Manifest has no chunk list.')
   }
 
+  // The manifest comes off a chat, so nothing in it is trusted. The checks below are
+  // arithmetic on these numbers, and arithmetic on a string or a null does not fail — it
+  // produces a comparison that rejects the manifest for the wrong reason. A string size used
+  // to be reported as "add up to 100, but the manifest records a file size of 100", which
+  // sends the reader hunting for a difference that is not there.
+  if (!Number.isSafeInteger(manifest.size) || manifest.size < 0) {
+    throw new Error(
+      `Manifest records a file size of ${JSON.stringify(manifest.size)}, ` +
+        'which is not a whole number of bytes.',
+    )
+  }
+
+  if (!Number.isSafeInteger(manifest.chunkSize) || manifest.chunkSize < 1) {
+    throw new Error(
+      `Manifest records a chunk size of ${JSON.stringify(manifest.chunkSize)}, ` +
+        'which is not a whole number of bytes above zero.',
+    )
+  }
+
   manifest.chunks.forEach((chunk, index) => {
+    if (typeof chunk !== 'object' || chunk === null) {
+      throw new Error(
+        `Manifest entry for chunk ${index + 1} is not an object: ${JSON.stringify(chunk)}.`,
+      )
+    }
+
+    if (!Number.isSafeInteger(chunk.size) || chunk.size < 0) {
+      throw new Error(
+        `Manifest records ${JSON.stringify(chunk.size)} bytes for chunk ${index + 1}, ` +
+          'which is not a whole number of bytes.',
+      )
+    }
+
     if (chunk.i !== index) {
       throw new Error(`Manifest is missing chunk ${index}: the chunk list is not contiguous.`)
     }

@@ -69,6 +69,17 @@ export async function downloadToFile(
     throw new Error(`offset must be a finite number, got: ${offset}`)
   }
 
+  // A pool of fewer than one worker does no work. In the download path that means
+  // Promise.all resolves at once and a chunk nobody fetched is reported as complete; in the
+  // upload path the batch loop never advances and the process spins in microtasks, which not
+  // even a test timeout can interrupt. Neither is something a caller should be able to ask
+  // for by accident.
+  if (!Number.isInteger(concurrency) || concurrency < 1) {
+    throw new Error(
+      `Worker count must be a whole number of at least one, got: ${JSON.stringify(concurrency)}.`,
+    )
+  }
+
   // Telegram's own record of how long the document is. Taking the length from the caller
   // instead would make runRestore's size check compare the manifest against itself.
   const size = returnBigInt(document.size ?? 0).toJSNumber()

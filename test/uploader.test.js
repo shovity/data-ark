@@ -374,3 +374,27 @@ test('a part Telegram never acknowledges fails instead of waiting forever', asyn
 
   await handle.close()
 })
+
+// `for (let start = 0; start < totalParts; start += concurrency)` never advances at zero.
+// The explicit timeout is the point of the test: without the guard this spins forever, and a
+// regression would hang the suite rather than fail it.
+test('uploadRange refuses a worker count below one instead of spinning', { timeout: 5000 }, async () => {
+  const { handle } = await tempFile(randomBytes(2000))
+
+  for (const concurrency of [0, -1, 1.5, NaN]) {
+    await assert.rejects(
+      () =>
+        uploadRange(fakeClient(), handle.fd, {
+          offset: 0,
+          length: 2000,
+          fileName: 'x',
+          partSize: 512,
+          concurrency,
+        }),
+      /at least one|whole number/i,
+      `concurrency ${concurrency} must not be accepted`,
+    )
+  }
+
+  await handle.close()
+})

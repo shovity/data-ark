@@ -8,7 +8,7 @@ import path from 'node:path'
 import { runUpload } from '../src/commands/upload.js'
 import { parseManifestCaption } from '../src/caption.js'
 import { parseManifest } from '../src/manifest.js'
-import { loadState, stateKey, MAX_STATES } from '../src/state.js'
+import { loadState, stateFile, stateKey, MAX_STATES } from '../src/state.js'
 
 /**
  * Fake client that collects every part by fileId and, when sendFile is called,
@@ -904,4 +904,44 @@ test('nothing left to send draws no bar at all', async () => {
     'all three chunks are reported as already sent',
   )
   assert.deepEqual(written, [], 'a bar that never has a byte to move is never drawn')
+})
+
+// A state file is JSON on disk that nothing validates on the way in. A truncated write or a
+// hand edit can leave a chunkSize the planner cannot use, and the planner's own message
+// talks about chunk sizes — sending the reader hunting through a --chunk-size flag they
+// never passed. Say where the number actually came from.
+test('a state file with an unusable chunk size names the file rather than the flag', async () => {
+  const ws = await tempWorkspace(1000)
+  const stat = await fs.stat(ws.filePath)
+  const key = stateKey(path.resolve(ws.filePath), stat.size, stat.mtimeMs)
+  const file = stateFile(key, ws.configDir)
+
+  await fs.mkdir(path.dirname(file), { recursive: true })
+  await fs.writeFile(
+    file,
+    JSON.stringify({
+      id: 'ark-20260101-aaaaaa',
+      chat: '@store',
+      path: path.resolve(ws.filePath),
+      size: stat.size,
+      mtimeMs: stat.mtimeMs,
+      chunkSize: 0,
+      done: {},
+    }),
+  )
+
+  await assert.rejects(
+    () =>
+      runUpload(ws.filePath, { to: '@store' }, {
+        ...deps(fakeClient()),
+        configDir: ws.configDir,
+        partSize: 128,
+        silent: true,
+      }),
+    (err) => {
+      assert.match(err.message, /record of this unfinished backup/i)
+      assert.match(err.message, new RegExp(file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+      return true
+    },
+  )
 })

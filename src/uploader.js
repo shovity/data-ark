@@ -46,6 +46,17 @@ export async function uploadRange(client, fd, options) {
     stallMs = DEFAULT_STALL_MS,
   } = options
 
+  // A pool of fewer than one worker does no work. In the download path that means
+  // Promise.all resolves at once and a chunk nobody fetched is reported as complete; in the
+  // upload path the batch loop never advances and the process spins in microtasks, which not
+  // even a test timeout can interrupt. Neither is something a caller should be able to ask
+  // for by accident.
+  if (!Number.isInteger(concurrency) || concurrency < 1) {
+    throw new Error(
+      `Worker count must be a whole number of at least one, got: ${JSON.stringify(concurrency)}.`,
+    )
+  }
+
   const totalParts = Math.ceil(length / partSize)
 
   if (totalParts > MAX_PARTS) {
