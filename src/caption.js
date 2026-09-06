@@ -24,7 +24,7 @@ export function chunkCaption({ id, number, total }) {
 
 export function manifestCaption({ id, name, size, chunks, createdAt }) {
   return [
-    `🗄 ${oneLine(name)}`,
+    `📄 ${oneLine(name)}`,
     `💾 ${formatBytes(size)} · ${chunks} chunk${chunks === 1 ? '' : 's'}`,
     `🆔 ${id}`,
     `📅 ${utcMinutes(createdAt)}`,
@@ -45,7 +45,7 @@ function marker(lines, emoji) {
 export function parseManifestCaption(text) {
   const lines = String(text ?? '').split('\n')
 
-  const name = marker(lines, '🗄')
+  const name = marker(lines, '📄')
   const totals = marker(lines, '💾')
   const id = marker(lines, '🆔')
   const createdAt = marker(lines, '📅')

@@ -27,7 +27,7 @@ test('a manifest caption is a summary card of the whole backup', () => {
   assert.equal(
     caption,
     [
-      '🗄 data.tar',
+      '📄 data.tar',
       '💾 21.4 GB · 12 chunks',
       '🆔 telstore-20260905-7f3a91',
       '📅 2026-09-05 16:40 UTC',
@@ -61,7 +61,7 @@ test('a manifest caption flattens line breaks in the file name', () => {
     createdAt: '2026-09-05T16:40:12.000Z',
   })
 
-  assert.equal(caption.split('\n')[0], '🗄 two lines.tar')
+  assert.equal(caption.split('\n')[0], '📄 two lines.tar')
   assert.equal(caption.split('\n').length, 7)
 })
 
@@ -94,5 +94,5 @@ test('an unrelated message parses as unknown', () => {
 })
 
 test('a card someone edited down to nothing parses as unknown', () => {
-  assert.equal(parseManifestCaption('🗄 data.tar\n#telstore'), null)
+  assert.equal(parseManifestCaption('📄 data.tar\n#telstore'), null)
 })
