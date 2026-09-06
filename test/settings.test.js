@@ -6,6 +6,7 @@ import {
   SETTING_KEYS,
   canonicalKey,
   isManagedByLogin,
+  knownSettings,
   requireChat,
   resolveSettings,
 } from '../src/settings.js'
@@ -147,4 +148,19 @@ test('each concurrency answers to its own flag and its own stored key', () => {
   assert.equal(byFile.values.uploadConcurrency, 16)
   assert.equal(byFile.values.downloadConcurrency, 4)
   assert.equal(byFile.source('uploadConcurrency'), 'settings')
+})
+
+// --- the snapshot a session token carries to a machine with no config file ---
+
+test('knownSettings keeps the settings telstore knows and leaves the rest behind', () => {
+  const stored = { chat: '@backups', chunkSize: 500, chnukSize: 500, note: 'mine' }
+
+  assert.deepEqual(knownSettings(stored), { chat: '@backups', chunkSize: 500 })
+})
+
+// A key telstore does not know would arrive on the far machine as a line in `config` telling
+// the reader to remove it — advice about a file they never wrote.
+test('knownSettings on nothing is nothing, not a group of undefineds', () => {
+  assert.deepEqual(knownSettings({}), {})
+  assert.deepEqual(knownSettings(), {})
 })

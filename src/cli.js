@@ -8,6 +8,7 @@ const SUBCOMMANDS = new Set([
   'delete',
   'status',
   'config',
+  'token',
   'help',
 ])
 
@@ -21,6 +22,7 @@ const OPTIONS = {
   verbose: { type: 'boolean' },
   unset: { type: 'boolean' },
   yes: { type: 'boolean' },
+  token: { type: 'boolean' },
   help: { type: 'boolean', short: 'h' },
 }
 
@@ -35,6 +37,10 @@ Usage:
   npx telstore status                     Show the account, the destination and unfinished backups
   npx telstore config                     Show every setting and where its value comes from
   npx telstore logout                     Remove the saved session
+
+Running on a machine you do not trust:
+  npx telstore token                      Print a session token for another machine
+  npx telstore login --token              Log in there by pasting one, session stays sealed
 
 Settings:
   npx telstore config <name>              Print one setting's value
@@ -57,6 +63,10 @@ Options apply to one run and are never saved. Use config to change a setting for
   --out <path>                Where to write the restored file. Defaults to the basename in
                               the manifest.
   --limit <n>                 How many backups list shows this run.
+  --token                     Log in by pasting a session token. It takes no value on
+                              purpose: a token written on the command line would sit in
+                              "ps" for the whole life of the command, and stay in that
+                              machine's shell history afterwards.
   --yes                       Delete without asking to confirm first.
   --verbose                   Show Telegram connection logs for this run.
   -h, --help                  Show this help.

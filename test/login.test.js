@@ -41,8 +41,14 @@ function fakePrompts(answers) {
 
   return {
     asked: [],
+    secretly: [],
     ask(question) {
       this.asked.push(question)
+      return Promise.resolve(remaining.shift() ?? '')
+    },
+    askSecret(question) {
+      this.asked.push(question)
+      this.secretly.push(question)
       return Promise.resolve(remaining.shift() ?? '')
     },
     close() {
@@ -105,4 +111,142 @@ test('logging in again offers the destination already stored as the default', as
 
   assert.match(prompts.asked.join('\n'), /\[@store\]/)
   assert.equal((await loadConfig(configDir)).settings.chat, '@store')
+})
+
+// --- logging in on a machine that must not keep a readable session ---
+
+import { encodeToken } from '../src/token.js'
+import { promises as fsp } from 'node:fs'
+import nodePath from 'node:path'
+
+const TOKEN_ACCOUNT = {
+  apiId: 123456,
+  apiHash: '0123456789abcdef',
+  session: '1BQANOTEuMTA4LjU2',
+  settings: { chat: '@backups' },
+}
+
+function tokenDeps(configDir, { readSecret, ...extra } = {}) {
+  return {
+    configDir,
+    token: true,
+    prompts: {
+      ask: () => {
+        throw new Error('asked a login question it did not need')
+      },
+      askSecret: readSecret,
+      close: () => {},
+    },
+    connectWith: async () => ({ getMe: async () => ({ username: 'sho' }) }),
+    shutdown: async () => {},
+    log: () => {},
+    ...extra,
+  }
+}
+
+function secrets(...lines) {
+  const queue = [...lines]
+
+  return (question) => {
+    if (queue.length === 0) throw new Error(`nothing left to answer: ${question}`)
+    return queue.shift()
+  }
+}
+
+// The whole point of the flag. A token written on the command line stays in the history of a
+// machine the user does not trust, and telstore must not ignore one silently while it sits
+// there.
+test('login refuses a token written on the command line and says where to paste it', async () => {
+  const dir = await tempDir('login-token')
+
+  await assert.rejects(
+    () => runLogin({ configDir: dir, args: ['tls1.abc'], token: true }),
+    /shell history/,
+  )
+})
+
+test('login --token leaves a sealed session on disk and no readable one', async () => {
+  const dir = await tempDir('login-token')
+  const token = await encodeToken(TOKEN_ACCOUNT, 'a passphrase')
+
+  await runLogin(tokenDeps(dir, { readSecret: secrets(token, 'a passphrase') }))
+
+  const written = await fsp.readFile(nodePath.join(dir, 'config.json'), 'utf8')
+
+  assert.doesNotMatch(written, /1BQANOTEuMTA4LjU2/)
+  assert.doesNotMatch(written, /0123456789abcdef/)
+  assert.equal(JSON.parse(written).sealed, token)
+  assert.deepEqual(JSON.parse(written).settings, { chat: '@backups' })
+})
+
+// A config that looked encrypted and was not would be telstore lying about what it kept, so
+// an unprotected token writes exactly the shape an ordinary login writes.
+test('login with an unprotected token writes the ordinary shape rather than pretending', async () => {
+  const dir = await tempDir('login-token')
+  const token = await encodeToken(TOKEN_ACCOUNT, '')
+
+  await runLogin(tokenDeps(dir, { readSecret: secrets(token) }))
+
+  const config = await loadConfig(dir)
+
+  assert.equal(config.sealed, undefined)
+  assert.equal(config.session, TOKEN_ACCOUNT.session)
+  assert.equal(config.apiId, TOKEN_ACCOUNT.apiId)
+})
+
+// Finding out at the start of a twenty-minute restore is finding out too late.
+test('a wrong passphrase is caught at login and nothing is written', async () => {
+  const dir = await tempDir('login-token')
+  const token = await encodeToken(TOKEN_ACCOUNT, 'a passphrase')
+
+  await assert.rejects(
+    () => runLogin(tokenDeps(dir, { readSecret: secrets(token, 'the wrong one') })),
+    /Could not open the session token/,
+  )
+  assert.deepEqual(await loadConfig(dir), {})
+})
+
+test('login --token proves the session still works before saying it worked', async () => {
+  const dir = await tempDir('login-token')
+  const token = await encodeToken(TOKEN_ACCOUNT, 'a passphrase')
+
+  await assert.rejects(
+    () =>
+      runLogin(
+        tokenDeps(dir, {
+          readSecret: secrets(token, 'a passphrase'),
+          connectWith: async () => {
+            throw new Error('Session expired — run "npx telstore login".')
+          },
+        }),
+      ),
+    /Session expired/,
+  )
+  assert.deepEqual(await loadConfig(dir), {})
+})
+
+// Shipping a feature whose whole purpose is not leaving credentials readable, while the
+// two-step password is echoed onto the screen two files away, would be incoherent.
+test('the two-step password is asked for without echoing it', async () => {
+  const configDir = await tempDir('login')
+  const prompts = fakePrompts(['1234', 'hash', '+1555', '00000', 'my-2fa', ''])
+
+  await runLogin({
+    configDir,
+    prompts,
+    createClient: () => ({
+      session: { save: () => 'saved-session' },
+      start: async ({ phoneNumber, phoneCode, password }) => {
+        await phoneNumber()
+        await phoneCode()
+        await password()
+      },
+      getMe: async () => ({ username: 'someone', firstName: 'Some' }),
+      destroy: async () => {},
+    }),
+    log: () => {},
+  })
+
+  assert.equal(prompts.secretly.length, 1)
+  assert.match(prompts.secretly[0], /Two-step password/)
 })

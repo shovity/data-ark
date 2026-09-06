@@ -52,6 +52,32 @@ deadline, so silence becomes an error `withRetry` can announce and act on. Its t
 deliberately not `unref`'d: it is the handle that keeps the event loop from running dry and
 exiting without a word.
 
+A session token is untrusted input in exactly that category, and it arrives through a chat.
+Authentication proves whoever made it knew the passphrase, not that they made it correctly, so
+`checkTokenBundle` runs on both sides — refusing a broken bundle on the machine that can fix it
+rather than on the one that cannot. Two details there are load-bearing and neither is obvious.
+`Buffer.from(s, 'base64url')` **silently drops every character outside the alphabet**:
+`'abc!!!def'` decodes to four bytes and re-encodes to `'abcdeQ'`, so a token mangled in transit
+would decrypt to garbage, fail its tag check, and be reported as a wrong passphrase — the wrong
+diagnosis, arrived at quietly. Re-encoding and comparing is what turns that into "this was
+damaged on the way here". And AES-GCM **cannot tell a wrong key from altered bytes**; both are
+one failed tag check. The message names both possibilities, puts the likelier first, and says
+telstore will not guess, because guessing sends half the readers after the wrong thing.
+
+The token's scrypt parameters are pinned to its `tls1.` prefix and never carried inside it: a
+token from a chat must not get to decide how much memory this machine allocates, and an
+embedded `N` of 2^30 is a denial of service that needs no passphrase at all. `maxmem` is spelled
+out because Node's own default is 32MB and would refuse `N = 2^16` outright, as an error that
+reads like a bug in telstore. The passphrase is normalized to NFC on both sides: macOS and Linux
+spell the same accented passphrase with different bytes, and the other spelling is simply a
+different key.
+
+An empty passphrase produces `tls0.`, a genuinely different format, and `login` then writes the
+ordinary plaintext config. **The config file never lies about whether the secret is protected** —
+a blob that looked encrypted and was not would be the same silent wrongness as everything above.
+For the same reason a config holding both `sealed` and a plain `session` is refused: two sources
+of truth for one account, and nothing to say which was meant.
+
 Manifests and state files are both untrusted input — one is downloaded from a chat, the
 other is JSON on disk that a truncated write or a hand edit can mangle — so neither is
 believed before its numbers are checked. `parseManifest` and `planChunks` reject anything
@@ -121,12 +147,24 @@ be served from the page cache.
 
 `src/commands/*.js` own the user-facing narrative. `src/caption.js`, `src/chat.js`,
 `src/chunking.js`, `src/manifest.js`, `src/progress.js`, `src/retry.js`, `src/settings.js`,
-`src/stall.js`, `src/state.js` and `src/config.js` are pure enough to test without a client.
+`src/stall.js`, `src/state.js`, `src/token.js`, `src/session.js` and `src/config.js` are pure
+enough to test without a client.
+
+`connect` in `src/client.js` is the one door a session goes through, which is why opening a
+sealed one lives there and not in the commands: eight copies of "how a session is unlocked" is
+eight things to keep in step, and a ninth command would simply forget. `src/session.js` holds
+the part that knows both config shapes, so `client.js` stays about Telegram.
 
 `src/confirm.js` holds the y/N prompt `restore` and `delete` both ask through, and
 `findManifestMessage` lives in `src/client.js` rather than in either command, because two
 copies of "how telstore finds a manifest" is how the two of them start disagreeing about
 which file is the manifest.
+
+`--token` is a third flag with no setting behind it, and it takes **no value**. A token written
+on the command line sits in `ps` for the whole life of the command and stays in the shell
+history of a machine the user does not trust, so it is pasted at a prompt that does not echo it.
+`login` refuses a positional argument rather than ignoring one — ignoring it would leave the
+token in that history for nothing.
 
 `--yes` and `--out` are the two flags with no setting behind them, and for the same kind of
 reason: neither is a preference. `--out` names where one restore goes, and `--yes` is the
@@ -173,6 +211,17 @@ the suite cannot catch a mismatch with GramJS's real API surface. This has bitte
 once already: `downloadToFile` passed `message.media.document` where GramJS needs
 `message.media`, and 142 tests stayed green while restore was completely broken in
 a published release.
+
+The same blindness applies to terminals, and it cost time here. `src/prompt.js` was first
+written to open a readline per question, and its tests passed against a fake stream that takes
+turns perfectly well. A real pty does not: the first interface keeps the listener, so a second
+question reaches end-of-input having read nothing and reports it as Ctrl-D. One interface asks
+every question in a conversation, with a curtain in front of its output, and `terminal` follows
+`stdin.isTTY` — that flag is what stops the tty driver echoing on its own, which is what leaves
+the curtain as the only thing between the keyboard and the screen. Verify any change here under
+a real pty (`( sleep 1.5; echo secret ) | script -qec "node bin/telstore.js token" /dev/null`),
+pacing the input like a human: lines that arrive before the prompt exists are echoed by the tty
+and then dropped, which looks exactly like a bug in the code and is not.
 
 When you touch code that hands an object to GramJS, assert against GramJS's own
 helper (as `test/downloader.test.js` does with `getFileInfo`) rather than against

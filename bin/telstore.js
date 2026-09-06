@@ -7,6 +7,7 @@ import { runList } from '../src/commands/list.js'
 import { runLogout } from '../src/commands/logout.js'
 import { runRestore } from '../src/commands/restore.js'
 import { runStatus } from '../src/commands/status.js'
+import { runToken } from '../src/commands/token.js'
 import { runUpload } from '../src/commands/upload.js'
 
 const SIGINT_EXIT_CODE = 130
@@ -18,6 +19,10 @@ let currentCommand = null
 let currentBackupId = null
 
 process.on('SIGINT', () => {
+  // A passphrase prompt has stdin in raw mode, and process.exit skips readline's own cleanup.
+  // Without this, Ctrl-C hands back a shell that no longer echoes what is typed into it.
+  if (process.stdin.isTTY) process.stdin.setRawMode(false)
+
   process.stderr.write(interruptMessage(currentCommand, { backupId: currentBackupId }))
   process.exit(SIGINT_EXIT_CODE)
 })
@@ -41,7 +46,11 @@ async function main() {
       return
 
     case 'login':
-      await runLogin({ verbose: Boolean(parsed.options.verbose) })
+      await runLogin({
+        args: parsed.args,
+        token: Boolean(parsed.options.token),
+        verbose: Boolean(parsed.options.verbose),
+      })
       return
 
     case 'logout':
@@ -58,6 +67,10 @@ async function main() {
 
     case 'config':
       await runConfig(parsed.args, parsed.options)
+      return
+
+    case 'token':
+      await runToken(parsed.args, parsed.options)
       return
 
     case 'upload':

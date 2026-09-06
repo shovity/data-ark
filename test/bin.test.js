@@ -164,3 +164,78 @@ test('--help mentions delete', async () => {
   const { stdout } = await runCli(['--help'])
   assert.match(stdout, /npx telstore delete/)
 })
+
+// --- a machine that logged in with a session token ---
+
+import { encodeToken } from '../src/token.js'
+
+const SEALED_ACCOUNT = { apiId: 123456, apiHash: '0123456789abcdef', session: '1BQANOTEuMTA4LjU2' }
+
+async function sealedHome() {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'telstore-sealed-'))
+  const sealed = await encodeToken(SEALED_ACCOUNT, 'a passphrase')
+
+  await fs.mkdir(path.join(home, '.telstore'), { recursive: true })
+  await fs.writeFile(
+    path.join(home, '.telstore', 'config.json'),
+    JSON.stringify({ sealed, settings: { chat: '@backups' } }),
+  )
+
+  return home
+}
+
+async function runCliIn(home, args) {
+  try {
+    const { stdout, stderr } = await run(process.execPath, [BIN, ...args], {
+      env: { ...process.env, HOME: home },
+    })
+    return { code: 0, stdout, stderr }
+  } catch (err) {
+    return { code: err.code, stdout: err.stdout ?? '', stderr: err.stderr ?? '' }
+  }
+}
+
+// The property the whole feature exists for. Not "no file is written" — a state file is fine
+// — but "nothing readable is written", checked against the bytes on disk rather than against
+// what any one code path meant to do.
+test('the session a token carried is nowhere in the config file it produced', async () => {
+  const home = await sealedHome()
+  const written = await fs.readFile(path.join(home, '.telstore', 'config.json'), 'utf8')
+
+  assert.doesNotMatch(written, /1BQANOTEuMTA4LjU2/)
+  assert.doesNotMatch(written, /0123456789abcdef/)
+})
+
+// status is what someone runs *because* something is already wrong, and on this machine the
+// account line cannot be read without a passphrase nobody can type into a pipe. Everything
+// else in the report still has to come out.
+test('status on a sealed session stays readable when there is no terminal to unlock it', async () => {
+  const home = await sealedHome()
+  const { code, stdout } = await runCliIn(home, ['status'])
+
+  assert.equal(code, 0)
+  assert.match(stdout, /Session\s+.*config\.json \(sealed/)
+  assert.match(stdout, /Account\s+.*no terminal/)
+  assert.match(stdout, /Destination\s+https:\/\/web\.telegram\.org/)
+  assert.match(stdout, /Unfinished\s+none/)
+})
+
+test('nothing a sealed session prints contains the session it hides', async () => {
+  const home = await sealedHome()
+
+  for (const args of [['status'], ['config'], ['config', 'chat']]) {
+    const { stdout, stderr } = await runCliIn(home, args)
+
+    assert.doesNotMatch(stdout + stderr, /1BQANOTEuMTA4LjU2/, `leaked by: ${args.join(' ')}`)
+    assert.doesNotMatch(stdout + stderr, /0123456789abcdef/, `leaked by: ${args.join(' ')}`)
+  }
+})
+
+test('a token cannot be typed on the command line, and login says so instead of ignoring it', async () => {
+  const home = await sealedHome()
+  const { code, stderr } = await runCliIn(home, ['login', '--token', 'tls1.abc'])
+
+  assert.equal(code, 1)
+  assert.match(stderr, /shell history/)
+  assert.doesNotMatch(stderr, /at Object|at async/)
+})

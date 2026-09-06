@@ -193,3 +193,21 @@ test('Ctrl-C during a delete says some chunks are already gone', () => {
   assert.match(message, /already gone/)
   assert.match(message, /again/)
 })
+
+test('token routes as a command, not as a file to upload', () => {
+  const r = route(['token'])
+  assert.equal(r.command, 'token')
+  assert.deepEqual(r.args, [])
+})
+
+// A flag carrying the token would sit in `ps` for the whole life of the command and stay in
+// the shell history of a machine the user does not trust. It takes no value on purpose.
+test('--token takes no value', () => {
+  const r = route(['login', '--token'])
+  assert.equal(r.command, 'login')
+  assert.equal(r.options.token, true)
+  // A token typed after the flag lands as a positional rather than being eaten by it, which
+  // is what lets runLogin refuse it by name instead of ignoring it while it sits in the
+  // history of a machine the user does not trust.
+  assert.deepEqual(route(['login', '--token', 'tls1.abc']).args, ['tls1.abc'])
+})

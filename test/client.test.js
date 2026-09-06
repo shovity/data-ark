@@ -176,3 +176,11 @@ test('deleteMessages fails when Telegram stops answering instead of waiting fore
 test('the batch size is the hundred Telegram accepts per request', () => {
   assert.equal(DELETE_BATCH_SIZE, 100)
 })
+
+test('assertLoggedIn accepts a config whose session is sealed behind a passphrase', () => {
+  assert.doesNotThrow(() => assertLoggedIn({ sealed: 'tls1.abc' }))
+})
+
+test('assertLoggedIn still refuses a config with neither shape', () => {
+  assert.throws(() => assertLoggedIn({ settings: { chat: 'me' } }), /Not logged in/)
+})

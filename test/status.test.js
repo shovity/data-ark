@@ -349,3 +349,36 @@ test('a record with a damaged path does not hide the backup after it', async () 
   assert.match(text, /telstore-fine/)
   assert.match(text, /Resume\s+npx telstore /)
 })
+
+// status never said which config it read. That is worth knowing at any time, and it is the
+// only place someone can see that this machine's session is a sealed one — so the row is
+// printed always, because a row that appears only sometimes reads as a warning.
+test('status names the config file the session came from', async () => {
+  const configDir = await tempDir('status')
+  const out = collect()
+  await saveConfig(LOGGED_IN, configDir)
+
+  await runStatus({}, {
+    configDir,
+    log: out.log,
+    connect: async () => fakeClient(),
+    disconnect: async () => {},
+  })
+
+  assert.match(out.text(), new RegExp(`Session\\s+${configDir}/config.json`))
+})
+
+test('status says when the session on this machine is sealed', async () => {
+  const configDir = await tempDir('status')
+  const out = collect()
+  await saveConfig({ sealed: 'tls1.abc' }, configDir)
+
+  await runStatus({}, {
+    configDir,
+    log: out.log,
+    connect: async () => fakeClient(),
+    disconnect: async () => {},
+  })
+
+  assert.match(out.text(), /Session\s+.*config\.json \(sealed/)
+})

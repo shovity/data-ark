@@ -203,3 +203,14 @@ export function requireChat(values) {
 
   return values.chat
 }
+
+// The snapshot of somebody's settings that a session token carries to a machine which has no
+// config file of its own. A stray key would arrive there as a line in `config` telling the
+// reader to remove a setting they never wrote, so keys telstore does not know are left behind
+// rather than carried along. This lives here because this is the one place that knows which
+// settings exist.
+export function knownSettings(stored = {}) {
+  return Object.fromEntries(
+    SETTING_KEYS.filter((key) => stored[key] !== undefined).map((key) => [key, stored[key]]),
+  )
+}

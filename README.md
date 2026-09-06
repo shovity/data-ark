@@ -14,6 +14,7 @@ npx telstore status                       # account, destination, unfinished bac
 npx telstore list                         # what is already stored in the destination
 npx telstore restore telstore-20260905-7f3a91
 npx telstore delete telstore-20260905-7f3a91   # take it back out of the chat, for good
+npx telstore token                        # a session token for a machine you do not trust
 ```
 
 ## What you need
@@ -128,10 +129,71 @@ manifest or local record giving a message id that is not a whole positive number
 deletes anything at all. A manifest too damaged for `restore` to use *can* still be deleted —
 that is usually the one you want gone.
 
+## Running on a machine you do not trust
+
+`login` leaves your Telegram session on the machine you run it on, in plain text. When that
+machine is not yours, print a **session token** on one that is and log in with that instead:
+
+```bash
+# on the machine you are already logged in on
+npx telstore token                        # asks for a passphrase, twice
+                                          # prints one line: tls1.…
+
+# on the other machine
+npx telstore login --token                # paste the token, then type the passphrase
+npx telstore restore telstore-20260905-7f3a91
+npx telstore logout                       # when you are done
+```
+
+The token holds your `api_id`, `api_hash`, session and settings, encrypted with the
+passphrase (AES-256-GCM, key derived with scrypt). It is one line of base64url, so it
+survives a chat message, an email or a QR code — and a copy that leaks without the
+passphrase is not enough to use your account.
+
+`login --token` stores the token exactly as it arrived, so **the session never exists on that
+machine in a form anyone can read**. Every command that talks to Telegram asks for the
+passphrase and opens it in memory:
+
+```json
+{ "sealed": "tls1.…", "settings": { "chat": "@my_backups" } }
+```
+
+`npx telstore status` shows which of the two you are running:
+
+```
+Session      /home/you/.telstore/config.json (sealed — opened with a passphrase)
+Account      Sho (@shovity)
+Destination  https://web.telegram.org/k/#@my_backups
+Unfinished   none
+```
+
+### What is left behind
+
+- **No readable session.** `logout` removes the sealed blob, and with it the `api_hash`,
+  which lives inside it.
+- **State files, yes.** An upload writes `~/.telstore/state/<key>.json` so it can be resumed
+  after an interruption. It holds the file path, the chunk sizes and the message ids — no
+  secret — and losing it would strand chunks in the chat with nothing able to name them.
+
+### Things worth knowing before you use one
+
+- **`--token` takes no value, on purpose.** A token written on the command line would sit in
+  `ps` for the whole life of the command and stay in that machine's shell history afterwards.
+  It is pasted at a prompt that does not echo it.
+- **The passphrase may be left empty**, and then the token says so on its face: it starts
+  `tls0.` instead of `tls1.`, `token` warns, and `login` stores the session in plain text
+  exactly as an ordinary login would. telstore will not write a file that looks encrypted and
+  is not.
+- **telstore cannot take a token back.** There is no expiry and no revocation. Like `logout`,
+  it says nothing to Telegram — to end the session for good, open Telegram → Settings →
+  Devices (Active sessions) and terminate it. Every copy of the token dies with it.
+- **A wrong passphrase and a damaged token are the same event** to AES-GCM: one failed
+  authentication check. telstore names both possibilities rather than guessing which it was.
+
 ## Limits worth knowing
 
 - A chunk cannot exceed 1950MB: Telegram accepts at most 4000 parts of 512KB per file, an arithmetic ceiling of about 1953MB, and telstore stops at 1950MB to leave a safety margin.
-- The data is **not** encrypted. Don't upload anything you would mind sitting on someone else's infrastructure.
+- The data is **not** encrypted. Don't upload anything you would mind sitting on someone else's infrastructure. The one thing telstore does encrypt is a session token, and that protects your login rather than your files.
 - Deleting a chunk message on Telegram destroys the backup, with no way to recover it. Use `npx telstore delete <backup-id>` when that is what you actually want.
 - Keep the `backupId`. Without it you have to hunt for the manifest in the chat by hand.
 
@@ -147,6 +209,16 @@ that is usually the one you want gone.
   "settings": { "chat": "@my_backups", "chunkSize": 524288000 }
 }
 ```
+
+A machine logged in with `npx telstore login --token` holds `sealed` instead of those three
+fields, and nothing else about the account:
+
+```json
+{ "sealed": "tls1.…", "settings": { "chat": "@my_backups" } }
+```
+
+A file holding both shapes is refused rather than guessed at — there would be no way to know
+which account was meant.
 
 Editing it by hand is fine, and a value that cannot be used is named on the next run — with the file and the key, never with a flag you did not type.
 

@@ -122,3 +122,38 @@ test('a syntax error asks for the syntax to be fixed before it offers to delete 
     return true
   })
 })
+
+// --- a config holding a sealed session, as `login --token` leaves it ---
+
+test('a sealed session that is not a string is refused', () => {
+  assert.throws(
+    () => checkConfigShape({ sealed: 42 }, '/tmp/config.json'),
+    /"sealed" in \/tmp\/config.json holds number/,
+  )
+})
+
+// Two sources of truth for one account, and no way to know which one the user meant. The
+// project's whole rule is that telstore does not guess at that.
+test('a config holding both a sealed session and a plain one is refused', () => {
+  assert.throws(
+    () => checkConfigShape({ sealed: 'tls1.abc', session: 's', apiId: 1, apiHash: 'h' }, '/tmp/c.json'),
+    /both a sealed session and a plain one/,
+  )
+})
+
+test('a config holding only a sealed session is fine', () => {
+  const raw = { sealed: 'tls1.abc', settings: { chat: 'me' } }
+
+  assert.deepEqual(checkConfigShape(raw, '/tmp/c.json'), raw)
+})
+
+// On a machine that logged in with a token there is nothing else to keep: the api_hash lives
+// inside the sealed blob, so leaving it would leave the whole account behind.
+test('clearSession removes a sealed session as well as a plain one', async () => {
+  const dir = await tempDir('config')
+  await saveConfig({ sealed: 'tls1.abc', settings: { chat: 'me' } }, dir)
+
+  await clearSession(dir)
+
+  assert.deepEqual(await loadConfig(dir), { settings: { chat: 'me' } })
+})

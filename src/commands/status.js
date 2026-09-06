@@ -130,6 +130,17 @@ export async function runStatus(options = {}, deps = {}) {
     settingsError = err.message
   }
 
+  // Which config this report is about, and whether the session in it can be read. Printed
+  // unconditionally: status never said where it looked before, and a row that shows up only
+  // when something is unusual reads as a warning rather than as a fact.
+  log(
+    row(
+      'Session',
+      config.sealed
+        ? `${configFile(configDir)} (sealed — opened with a passphrase)`
+        : configFile(configDir),
+    ),
+  )
   log(row('Account', await accountLine(config, settings?.verbose ?? false, { connect, disconnect })))
   log(
     row(

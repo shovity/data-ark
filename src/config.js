@@ -37,6 +37,26 @@ export function checkConfigShape(raw, file) {
     )
   }
 
+  // What `login --token` leaves behind: the session and the api_hash sealed inside one blob
+  // that only a passphrase opens. It is read by `connect`, never by anything that writes.
+  if (raw.sealed !== undefined && typeof raw.sealed !== 'string') {
+    throw new Error(
+      `"sealed" in ${file} holds ${Array.isArray(raw.sealed) ? 'a list' : typeof raw.sealed}, ` +
+        'not a sealed session. Log in again with "npx telstore login --token", or remove that ' +
+        'entry and log in with a phone number.',
+    )
+  }
+
+  // Two sources of truth for one account, and nothing to say which one was meant. Guessing
+  // would mean connecting as an account the user did not choose — either the stale one they
+  // thought they had replaced, or the one they thought they had left behind.
+  if (raw.sealed !== undefined && (raw.session !== undefined || raw.apiHash !== undefined)) {
+    throw new Error(
+      `${file} holds both a sealed session and a plain one. telstore will not guess which ` +
+        'account was meant — delete the file and log in again.',
+    )
+  }
+
   return raw
 }
 
@@ -79,8 +99,12 @@ export async function saveConfig(config, dir = defaultConfigDir()) {
   await writeJsonAtomic(configFile(dir), config)
 }
 
+// Both shapes go, because they are the same thing written two ways. On a machine that logged
+// in with a token the api_hash lives inside the sealed blob, so keeping it "like an ordinary
+// logout does" would keep the entire account.
 export async function clearSession(dir = defaultConfigDir()) {
   const config = await loadConfig(dir)
   delete config.session
+  delete config.sealed
   await saveConfig(config, dir)
 }

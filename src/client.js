@@ -5,6 +5,7 @@ import { StringSession } from 'telegram/sessions/index.js'
 
 import { manifestFileName } from './manifest.js'
 import { withRetry } from './retry.js'
+import { unlockConfig } from './session.js'
 import { DEFAULT_STALL_MS, withStallTimeout } from './stall.js'
 
 // GramJS narrates its version, every connection and every disconnect at info level, and
@@ -121,16 +122,27 @@ export async function closeQuietly(client, disconnect, onWarn) {
   }
 }
 
+// Two shapes count as logged in: the ordinary one login writes, and the sealed blob that
+// "login --token" leaves, which holds the same three fields behind a passphrase. Checked
+// before anything asks for that passphrase, so somebody who never logged in is told so rather
+// than asked to type a secret for an account that is not there.
 export function assertLoggedIn(config) {
+  if (config.sealed) return
+
   if (!config.session || !config.apiId || !config.apiHash) {
     throw new Error('Not logged in — run "npx telstore login" first.')
   }
 }
 
-export async function connect(config, { verbose = false } = {}) {
+// Every command that needs Telegram comes through here, which makes this the one place a
+// sealed session has to be opened. Doing it anywhere else would mean eight places to keep in
+// step, and a ninth command would simply forget.
+export async function connect(config, { verbose = false, unlock = unlockConfig } = {}) {
   assertLoggedIn(config)
 
-  const client = new TelegramClient(new StringSession(config.session), config.apiId, config.apiHash, {
+  const { apiId, apiHash, session } = await unlock(config)
+
+  const client = new TelegramClient(new StringSession(session), apiId, apiHash, {
     connectionRetries: 5,
     floodSleepThreshold: 60,
     baseLogger: createLogger(verbose),
