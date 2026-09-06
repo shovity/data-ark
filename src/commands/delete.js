@@ -248,3 +248,198 @@ export async function runDelete(backupId, options = {}, deps = {}) {
     )
   }
 }
+
+
+// `telstore delete a b c` is three deletes, and the question that guards them is asked once —
+// which means it has to be able to say what all three are. So the batch looks every id up
+// before it asks: the manifest for the finished ones, the local record for the unfinished, and
+// an id that neither knows about refuses the whole run rather than half of it. runDelete then
+// does exactly what it does alone, having already been told the answer.
+export async function runDeletes(backupIds, options = {}, deps = {}) {
+  const {
+    connect = realConnect,
+    disconnect = (client) => client.destroy(),
+    configDir = defaultConfigDir(),
+    searchManifest = findManifestMessage,
+    readMessageBytes = realReadMessageBytes,
+    confirm = askConfirm,
+    interactive = () => Boolean(process.stdin.isTTY),
+    writeErr = (line) => process.stderr.write(line),
+    log: writeLog = (line) => console.log(line),
+    silent = false,
+  } = deps
+
+  // One id keeps its own wording, its own question and its own thrown error.
+  if (backupIds.length === 1) {
+    const result = await runDelete(backupIds[0], options, deps)
+    return { results: [result], failed: 0 }
+  }
+
+  const duplicate = backupIds.find((id, index) => backupIds.indexOf(id) !== index)
+
+  if (duplicate) {
+    throw new Error(
+      `${duplicate} is named twice. Deleting one backup twice does nothing the first pass ` +
+        'did not already do — name it once.',
+    )
+  }
+
+  const config = await loadConfig(configDir)
+
+  assertLoggedIn(config)
+
+  const { values: settings } = resolveSettings(options, config, { file: configFile(configDir) })
+  const chat = requireChat(settings)
+
+  const log = silent ? () => {} : writeLog
+  const warn = silent ? () => {} : writeErr
+
+  let shared = null
+  const perId = {
+    ...deps,
+    connect: async (theirConfig, connectOptions) =>
+      (shared ??= await connect(theirConfig, connectOptions)),
+    disconnect: async () => {},
+  }
+
+  const results = []
+
+  try {
+    const client = await perId.connect(config, { verbose: settings.verbose })
+    const rows = []
+    const unknown = []
+
+    for (const backupId of backupIds) {
+      const message = await searchManifest(client, chat, backupId)
+      const records = await findStates(backupId, configDir)
+
+      if (!message && records.length === 0) {
+        unknown.push(backupId)
+        continue
+      }
+
+      // A manifest too damaged to read is exactly the backup somebody is here to remove, so
+      // it costs the row its name and size, not the run. runDelete refuses the ones that
+      // cannot name their message ids, which is the check that actually protects anything.
+      let manifest = null
+
+      if (message) {
+        try {
+          manifest = parseManifestJson(await readMessageBytes(client, message))
+        } catch {
+          manifest = null
+        }
+      }
+
+      rows.push({ id: backupId, manifest, record: records[0] ?? null })
+    }
+
+    if (unknown.length > 0) {
+      throw new Error(
+        `Nothing was deleted: ${unknown.join(', ')} — not found in ${chatName(chat)}, and no ` +
+          'local record of it on this machine either. Check the ids with "npx telstore list".',
+      )
+    }
+
+    if (!options.yes) {
+      if (!interactive()) {
+        throw new Error(
+          `${backupIds.length} backups to delete, and no terminal to confirm that in. Run ` +
+            'again with --yes to delete them without being asked.',
+        )
+      }
+
+      for (const line of listingLines(rows, chat)) log(line)
+
+      if (
+        !(await confirm(
+          `The chunks cannot be recovered. Delete all ${backupIds.length}? [y/N] `,
+        ))
+      ) {
+        throw new Error('Cancelled on request.')
+      }
+    }
+
+    for (const [index, backupId] of backupIds.entries()) {
+      if (index > 0) log('')
+      log(`[${index + 1}/${backupIds.length}] ${backupId}`)
+
+      try {
+        // The question was asked about the whole list a moment ago; asking again per backup
+        // would be asking the same thing three times.
+        results.push(await runDelete(backupId, { ...options, yes: true }, perId))
+      } catch (err) {
+        results.push({ id: backupId, error: err.message })
+        warn(`\n${backupId} failed: ${err.message}\n`)
+      }
+    }
+  } finally {
+    if (shared) {
+      await closeQuietly(shared, disconnect, (err) =>
+        warn(`\nWarning: could not close the Telegram connection: ${err.message}\n`),
+      )
+    }
+  }
+
+  const failed = results.filter((result) => result.error).length
+
+  log('')
+  for (const line of summaryLines(results, failed)) log(line)
+
+  return { results, failed }
+}
+
+// What is about to be destroyed, spelled out before the one question that authorises it. An
+// unfinished backup has no manifest to describe it, so its own record speaks for it.
+function listingLines(rows, chat) {
+  const described = rows.map(({ id, manifest, record }) => ({
+    id,
+    name: manifest
+      ? describeName(manifest.name)
+      : `${describeName(record?.state?.path)} (unfinished)`,
+    size: manifest ? describeSize(manifest.size) : UNKNOWN,
+    chunks: plural(countChunks(manifest, record), 'chunk'),
+  }))
+
+  const width = (key) => Math.max(...described.map((row) => row[key].length))
+  const [idWidth, nameWidth, sizeWidth] = [width('id'), width('name'), width('size')]
+
+  return [
+    `Deleting ${rows.length} backups from ${describeChat(chat)}`,
+    '',
+    ...described.map(
+      (row) =>
+        `  ${row.id.padEnd(idWidth)}  ${row.name.padEnd(nameWidth)}  ` +
+        `${row.size.padStart(sizeWidth)}  ${row.chunks}`,
+    ),
+    '',
+  ]
+}
+
+function countChunks(manifest, record) {
+  if (Array.isArray(manifest?.chunks)) return manifest.chunks.length
+
+  const done = record?.state?.done
+
+  return typeof done === 'object' && done !== null ? Object.keys(done).length : 0
+}
+
+// Every id gets a line whether it worked or not: one missing from this list would be a backup
+// nobody could tell the fate of.
+function summaryLines(results, failed) {
+  const width = Math.max(...results.map((result) => result.id.length))
+  const deleted = results.length - failed
+
+  return [
+    `${results.length} backups: ${deleted} deleted, ${failed} failed.`,
+    '',
+    ...results.map((result) => {
+      const id = result.id.padEnd(width)
+
+      return result.error
+        ? `  ${id}  failed: ${result.error}`
+        : `  ${id}  ${plural(result.chunks, 'chunk message')} removed` +
+            (result.manifestDeleted ? ' with its manifest' : '')
+    }),
+  ]
+}
