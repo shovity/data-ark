@@ -4,8 +4,6 @@ import { formatBytes } from './progress.js'
 // but that turns every file name into something that has to be escaped correctly, and
 // the fake client the tests talk to would never notice a mistake there.
 
-const DIVIDER = '━'.repeat(15)
-
 // The hashtag is what `list` searches for, and it lives on the manifest alone: chunk
 // captions stay out of that search so a twelve-chunk backup is one hit, not thirteen.
 export const MANIFEST_TAG = '#telstore'
@@ -27,7 +25,6 @@ export function chunkCaption({ id, number, total }) {
 export function manifestCaption({ id, name, size, chunks, createdAt }) {
   return [
     `🗄 ${oneLine(name)}`,
-    DIVIDER,
     `💾 ${formatBytes(size)} · ${chunks} chunk${chunks === 1 ? '' : 's'}`,
     `🆔 ${id}`,
     `📅 ${utcMinutes(createdAt)}`,

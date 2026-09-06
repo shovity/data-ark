@@ -28,7 +28,6 @@ test('a manifest caption is a summary card of the whole backup', () => {
     caption,
     [
       '🗄 data.tar',
-      '━━━━━━━━━━━━━━━',
       '💾 21.4 GB · 12 chunks',
       '🆔 telstore-20260905-7f3a91',
       '📅 2026-09-05 16:40 UTC',
@@ -63,7 +62,7 @@ test('a manifest caption flattens line breaks in the file name', () => {
   })
 
   assert.equal(caption.split('\n')[0], '🗄 two lines.tar')
-  assert.equal(caption.split('\n').length, 8)
+  assert.equal(caption.split('\n').length, 7)
 })
 
 test('a manifest caption parses back into the fields it was built from', () => {

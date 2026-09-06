@@ -63,7 +63,6 @@ follows carries a summary card:
 
 ```
 🗄 data.tar
-━━━━━━━━━━━━━━━
 💾 21.4 GB · 12 chunks
 🆔 telstore-20260905-7f3a91
 📅 2026-09-05 16:40 UTC
