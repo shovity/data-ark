@@ -828,7 +828,7 @@ is the one reported, and the pool stops handing out slices once anything fails."
 
 Every test above talks to a fake client that accepts whatever it is given. Before releasing, and as `CLAUDE.md` requires:
 
-- [ ] Restore a real multi-chunk backup larger than 10MB from a real account and compare sha256 against the original in both directions.
-- [ ] Restore a backup below the 10MB threshold the same way.
+- [x] Restore a real multi-chunk backup larger than 10MB from a real account and compare sha256 against the original in both directions. — 200MB in 2 chunks of 100MB (13 slices each, `InputFileBig`), sha256 recorded before upload, `cmp` byte-identical after restore.
+- [x] Restore a backup below the 10MB threshold the same way. — 12MB in 3 chunks of 5MB (`InputFile`, 1 slice each), byte-identical.
 - [ ] Interrupt the network partway through a restore and confirm it resumes and still verifies, rather than dying or handing over a file that fails its sha256.
-- [ ] Confirm the throughput actually improved: the design predicts roughly 4 minutes for a 4.3GB restore against the previous ~24.
+- [x] Confirm the throughput actually improved — it did, but by half what was predicted: **9.7 MB/s sustained**, ~3.1x the old 3.1 MB/s, putting a 4.3GB restore near 7–8 minutes rather than 4. See the design doc's "What sustained transfer actually measured".

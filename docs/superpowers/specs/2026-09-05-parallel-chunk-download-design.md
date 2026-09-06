@@ -26,6 +26,21 @@ A separate machine running the released CLI over a different network reported
 Parallelism is worth 5–7x, and it plateaus at 8; 16 is no better and 24 is no
 better than 16.
 
+### What sustained transfer actually measured (2026-09-06)
+
+The numbers above are what shipped, and they are optimistic. Every one of them
+comes from a burst of 1.5–3.5 seconds. A real restore runs for minutes, and the
+implementation measured against the same 4.3GB backup sustains **9.7 MB/s**, not
+19 — a genuine 3.1x over the 3.1 MB/s that motivated this work, but half the
+speedup this design claimed. A 4.3GB restore lands around 7–8 minutes rather
+than the ~4 predicted above.
+
+The disk was ruled out: `dd` writes sequentially at 256 MB/s on the same
+machine. The likeliest explanation is that Telegram throttles a sustained
+multi-minute transfer more than it throttles short bursts, which the benchmark
+never sampled. Anyone benchmarking this path again should measure over minutes,
+not seconds.
+
 ## Approach
 
 Split each chunk into fixed 8MB slices and run a pool of 8 workers that pull
