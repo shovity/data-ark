@@ -5,7 +5,8 @@ import { TelegramClient } from 'telegram'
 import { StringSession } from 'telegram/sessions/index.js'
 
 import { loadConfig, saveConfig, defaultConfigDir } from '../config.js'
-import { createLogger, normalizeChatTarget } from '../client.js'
+import { normalizeChatTarget } from '../chat.js'
+import { createLogger } from '../client.js'
 
 function createPrompts() {
   const rl = readline.createInterface({ input: stdin, output: stdout })

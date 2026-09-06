@@ -1,7 +1,8 @@
 import path from 'node:path'
 
 import { countChunks } from '../chunking.js'
-import { assertLoggedIn, closeQuietly, connect as realConnect, describeChat } from '../client.js'
+import { describeChat } from '../chat.js'
+import { assertLoggedIn, closeQuietly, connect as realConnect } from '../client.js'
 import { defaultConfigDir, loadConfig } from '../config.js'
 import { runSetDestination } from './set-destination.js'
 import { formatBytes } from '../progress.js'

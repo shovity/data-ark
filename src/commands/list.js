@@ -1,10 +1,9 @@
 import { MANIFEST_TAG, parseManifestCaption } from '../caption.js'
+import { chatName, describeChat } from '../chat.js'
 import {
   assertLoggedIn,
-  chatName,
   closeQuietly,
   connect as realConnect,
-  describeChat,
   requireChat,
   searchDocuments,
 } from '../client.js'

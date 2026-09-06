@@ -1,4 +1,4 @@
-import { normalizeChatTarget } from '../client.js'
+import { normalizeChatTarget } from '../chat.js'
 import { defaultConfigDir, loadConfig, saveConfig } from '../config.js'
 
 export async function runSetDestination(options = {}, deps = {}) {

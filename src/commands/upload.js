@@ -13,7 +13,8 @@ import {
   planChunks,
 } from '../chunking.js'
 import { chunkCaption, manifestCaption } from '../caption.js'
-import { closeQuietly, connect as realConnect, describeChat, requireChat } from '../client.js'
+import { describeChat } from '../chat.js'
+import { closeQuietly, connect as realConnect, requireChat } from '../client.js'
 import { defaultConfigDir, loadConfig, saveConfig } from '../config.js'
 import {
   buildManifest,
