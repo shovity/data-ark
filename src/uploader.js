@@ -13,7 +13,7 @@ const read = promisify(readCallback)
 
 // Telegram splits its upload API by file size: only files above 10MB may use the
 // "big" family. GramJS picks the same threshold (LARGE_FILE_THRESHOLD in
-// node_modules/telegram/client/uploads.js), and telark follows it.
+// node_modules/telegram/client/uploads.js), and telstore follows it.
 export const LARGE_FILE_THRESHOLD = 10 * 1024 * 1024
 
 async function readExactly(fd, length, position) {

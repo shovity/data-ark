@@ -16,9 +16,9 @@ test('a path with slashes is still an upload', () => {
 })
 
 test('restore is recognised as a subcommand with a backup id', () => {
-  const r = route(['restore', 'telark-20260905-7f3a91'])
+  const r = route(['restore', 'telstore-20260905-7f3a91'])
   assert.equal(r.command, 'restore')
-  assert.deepEqual(r.args, ['telark-20260905-7f3a91'])
+  assert.deepEqual(r.args, ['telstore-20260905-7f3a91'])
 })
 
 test('login and logout are subcommands', () => {
@@ -40,7 +40,7 @@ test('the accompanying flags are parsed', () => {
 })
 
 test('the --out flag belongs to restore', () => {
-  const r = route(['restore', 'telark-1', '--out', '/tmp/out.tar'])
+  const r = route(['restore', 'telstore-1', '--out', '/tmp/out.tar'])
   assert.equal(r.command, 'restore')
   assert.equal(r.options.out, '/tmp/out.tar')
 })
@@ -52,13 +52,13 @@ test('an invalid flag produces a clear error', () => {
 test('--verbose is parsed as a flag', () => {
   assert.equal(route(['big.iso', '--verbose']).options.verbose, true)
   assert.equal(route(['big.iso']).options.verbose, undefined)
-  assert.equal(route(['restore', 'telark-1', '--verbose']).options.verbose, true)
+  assert.equal(route(['restore', 'telstore-1', '--verbose']).options.verbose, true)
 })
 
 test('a negative channel id is accepted separated by a space, not only with =', () => {
   assert.equal(route(['data.tar', '--to', '-1001234567890']).options.to, '-1001234567890')
   assert.equal(route(['data.tar', '--to=-1001234567890']).options.to, '-1001234567890')
-  assert.equal(route(['restore', 'telark-1', '--to', '-100123']).options.to, '-100123')
+  assert.equal(route(['restore', 'telstore-1', '--to', '-100123']).options.to, '-100123')
 })
 
 test('joining a negative value does not swallow the flag that follows --to', () => {
@@ -77,8 +77,8 @@ test('status is a subcommand', () => {
 })
 
 test('--to without a file points at the command that actually saves a destination', () => {
-  assert.throws(() => route(['--to', '@my_backups']), /telark config chat @my_backups/)
-  assert.throws(() => route(['--to', '-1001234567890']), /telark config chat -1001234567890/)
+  assert.throws(() => route(['--to', '@my_backups']), /telstore config chat @my_backups/)
+  assert.throws(() => route(['--to', '-1001234567890']), /telstore config chat -1001234567890/)
 })
 
 test('--to with --help is still help, not an error', () => {
@@ -128,11 +128,11 @@ test('list takes --limit and --to', () => {
 })
 
 test('interrupting an upload names the backup and how to carry on', () => {
-  const message = interruptMessage('upload', { backupId: 'telark-20260905-7f3a91' })
+  const message = interruptMessage('upload', { backupId: 'telstore-20260905-7f3a91' })
 
-  assert.match(message, /telark-20260905-7f3a91/)
+  assert.match(message, /telstore-20260905-7f3a91/)
   assert.match(message, /run the same command again/)
-  assert.match(message, /telark status/)
+  assert.match(message, /telstore status/)
 })
 
 test('interrupting an upload before it has an id still promises nothing false', () => {
@@ -152,9 +152,9 @@ test('interrupting anything else just says it stopped', () => {
 })
 
 test('delete is a subcommand carrying the backup id', () => {
-  const r = route(['delete', 'telark-20260905-7f3a91'])
+  const r = route(['delete', 'telstore-20260905-7f3a91'])
   assert.equal(r.command, 'delete')
-  assert.deepEqual(r.args, ['telark-20260905-7f3a91'])
+  assert.deepEqual(r.args, ['telstore-20260905-7f3a91'])
 })
 
 test('delete without an id is still routed, so the command can say what is missing', () => {
@@ -164,14 +164,14 @@ test('delete without an id is still routed, so the command can say what is missi
 })
 
 test('--yes is a flag, present only when it was typed', () => {
-  assert.equal(route(['delete', 'telark-1', '--yes']).options.yes, true)
-  assert.equal(route(['delete', 'telark-1']).options.yes, undefined)
+  assert.equal(route(['delete', 'telstore-1', '--yes']).options.yes, true)
+  assert.equal(route(['delete', 'telstore-1']).options.yes, undefined)
 })
 
 test('delete reaches a negative channel id like every other command', () => {
-  const r = route(['delete', 'telark-1', '--to', '-1001234567890'])
+  const r = route(['delete', 'telstore-1', '--to', '-1001234567890'])
   assert.equal(r.command, 'delete')
-  assert.deepEqual(r.args, ['telark-1'])
+  assert.deepEqual(r.args, ['telstore-1'])
   assert.equal(r.options.to, '-1001234567890')
 })
 

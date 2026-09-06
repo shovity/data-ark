@@ -1,19 +1,19 @@
-# telark
+# telstore
 
 Split large files into 1.8GB chunks, store them on Telegram, and restore them intact.
 
 ## Quick start
 
 ```bash
-npx telark login                        # once only
-npx telark config chat @my_backups      # where backups go, from now on
-npx telark data.tar                     # split it and send it there
-npx telark data.tar --to @somewhere     # somewhere else, this run only
-npx telark config                       # every setting and where its value comes from
-npx telark status                       # account, destination, unfinished backups
-npx telark list                         # what is already stored in the destination
-npx telark restore telark-20260905-7f3a91
-npx telark delete telark-20260905-7f3a91   # take it back out of the chat, for good
+npx telstore login                        # once only
+npx telstore config chat @my_backups      # where backups go, from now on
+npx telstore data.tar                     # split it and send it there
+npx telstore data.tar --to @somewhere     # somewhere else, this run only
+npx telstore config                       # every setting and where its value comes from
+npx telstore status                       # account, destination, unfinished backups
+npx telstore list                         # what is already stored in the destination
+npx telstore restore telstore-20260905-7f3a91
+npx telstore delete telstore-20260905-7f3a91   # take it back out of the chat, for good
 ```
 
 ## What you need
@@ -21,19 +21,19 @@ npx telark delete telark-20260905-7f3a91   # take it back out of the chat, for g
 - Node.js 18 or newer.
 - An `api_id` and `api_hash` from <https://my.telegram.org> → API development tools. The `login` command asks for both, plus your phone number and the verification code.
 
-telark signs in with your own Telegram account (MTProto), not a bot. That is a hard requirement: the Bot API caps uploads at 50MB per file, while a user account gets 2GB.
+telstore signs in with your own Telegram account (MTProto), not a bot. That is a hard requirement: the Bot API caps uploads at 50MB per file, while a user account gets 2GB.
 
 ## Settings and flags
 
-There are two ways to say what telark should do, and they never overlap. **`config` writes;
+There are two ways to say what telstore should do, and they never overlap. **`config` writes;
 flags do not.** A flag applies to the run you typed it on and changes nothing on disk, so
 `--to @elsewhere` sends one backup elsewhere without moving the destination for the next one.
 
 ```bash
-npx telark config                       # everything, and whether it is yours or a default
-npx telark config chat                  # one value, bare, ready to pipe
-npx telark config chunkSize 500MB       # change it for good
-npx telark config chunkSize --unset     # back to the default
+npx telstore config                       # everything, and whether it is yours or a default
+npx telstore config chat                  # one value, bare, ready to pipe
+npx telstore config chunkSize 500MB       # change it for good
+npx telstore config chunkSize --unset     # back to the default
 ```
 
 | Setting | Flag | Default | Meaning |
@@ -63,24 +63,24 @@ follows carries a summary card:
 🗄 data.tar
 ━━━━━━━━━━━━━━━
 💾 21.4 GB · 12 chunks
-🆔 telark-20260905-7f3a91
+🆔 telstore-20260905-7f3a91
 📅 2026-09-05 16:40 UTC
 
-↩ npx telark restore telark-20260905-7f3a91
-#telark
+↩ npx telstore restore telstore-20260905-7f3a91
+#telstore
 ```
 
-`npx telark list` reads those cards straight out of the chat — one search, no downloads —
+`npx telstore list` reads those cards straight out of the chat — one search, no downloads —
 and lays them out as a table:
 
 ```
 Destination  https://web.telegram.org/k/#@my_backups
 
-BACKUP ID               FILE            SIZE  CHUNKS  CREATED
-telark-20260905-7f3a91  data.tar     21.4 GB      12  2026-09-05
-telark-20260901-9de447  photos.zip  940.3 MB       1  2026-09-01
+BACKUP ID                 FILE            SIZE  CHUNKS  CREATED
+telstore-20260905-7f3a91  data.tar     21.4 GB      12  2026-09-05
+telstore-20260901-9de447  photos.zip  940.3 MB       1  2026-09-01
 
-2 backups. Restore with: npx telark restore <backup-id>
+2 backups. Restore with: npx telstore restore <backup-id>
 ```
 
 A backup uploaded before the card existed still gets a row, with dashes where the caption
@@ -88,22 +88,22 @@ says nothing — `list` reports what the chat holds and never fills gaps with gu
 
 ## How it works
 
-Every run mints a `backupId`. The file is read directly by offset — no temporary copies — and uploaded as documents named `<backupId>.partNNNN`. Once every chunk is up, telark sends a JSON manifest listing the message id and sha256 of each one. Restore needs only the `backupId`: it finds the manifest in the chat, downloads each chunk to its exact position in a `.partial` file, checks every chunk's sha256 and size, and renames it to the real file only after *all* chunks match.
+Every run mints a `backupId`. The file is read directly by offset — no temporary copies — and uploaded as documents named `<backupId>.partNNNN`. Once every chunk is up, telstore sends a JSON manifest listing the message id and sha256 of each one. Restore needs only the `backupId`: it finds the manifest in the chat, downloads each chunk to its exact position in a `.partial` file, checks every chunk's sha256 and size, and renames it to the real file only after *all* chunks match.
 
-If the connection drops during an **upload**, just run the same command again — progress lives in `~/.telark/state/` and finished chunks are skipped, keeping the same `backupId`. Two things to know about rerunning:
+If the connection drops during an **upload**, just run the same command again — progress lives in `~/.telstore/state/` and finished chunks are skipped, keeping the same `backupId`. Two things to know about rerunning:
 
-- Running again against a destination that differs from the one in the unfinished progress makes telark **refuse to run** rather than silently redirect — one backup cannot be split across two destinations. The error names the chat to pass as `--to` to carry on, or the state file to delete to start a new backup. It reads the same whether the mismatch came from a flag or from your configured `chat`.
+- Running again against a destination that differs from the one in the unfinished progress makes telstore **refuse to run** rather than silently redirect — one backup cannot be split across two destinations. The error names the chat to pass as `--to` to carry on, or the state file to delete to start a new backup. It reads the same whether the mismatch came from a flag or from your configured `chat`.
 - Running again **without** `--chunk-size` resumes at the size the backup started with, whatever your configured `chunkSize` says today. A setting is what to use when nobody asks for anything; it is not somebody asking.
-- Running again **with** a `--chunk-size` that differs from that size makes telark **refuse to run**: the chunks already in the chat were cut that way and cannot be re-cut. Drop the flag to carry on, or delete the state file to start a new backup — which leaves the chunks already sent in the chat with nothing pointing at them.
+- Running again **with** a `--chunk-size` that differs from that size makes telstore **refuse to run**: the chunks already in the chat were cut that way and cannot be re-cut. Drop the flag to carry on, or delete the state file to start a new backup — which leaves the chunks already sent in the chat with nothing pointing at them.
 
-`Ctrl-C` during an upload names the backup it was working on, so `telark status` and a later `restore` have something to go on. telark keeps the **20 most recent** unfinished backups in `~/.telark/state/`; starting a new one past that drops the oldest record and says which id it dropped. Only the local record goes — the chunks that backup sent stay in the chat, searchable by that id, but it can no longer be resumed.
+`Ctrl-C` during an upload names the backup it was working on, so `telstore status` and a later `restore` have something to go on. telstore keeps the **20 most recent** unfinished backups in `~/.telstore/state/`; starting a new one past that drops the oldest record and says which id it dropped. Only the local record goes — the chunks that backup sent stay in the chat, searchable by that id, but it can no longer be resumed.
 
 **Restore keeps no state to resume from.** Pressing `Ctrl-C` mid-restore saves nothing — running again starts over.
 
 ## Deleting a backup
 
 ```bash
-npx telark delete telark-20260905-7f3a91
+npx telstore delete telstore-20260905-7f3a91
 ```
 
 It prints what it is about to destroy, asks once, and then removes every chunk message and
@@ -129,14 +129,14 @@ that is usually the one you want gone.
 
 ## Limits worth knowing
 
-- A chunk cannot exceed 1950MB: Telegram accepts at most 4000 parts of 512KB per file, an arithmetic ceiling of about 1953MB, and telark stops at 1950MB to leave a safety margin.
+- A chunk cannot exceed 1950MB: Telegram accepts at most 4000 parts of 512KB per file, an arithmetic ceiling of about 1953MB, and telstore stops at 1950MB to leave a safety margin.
 - The data is **not** encrypted. Don't upload anything you would mind sitting on someone else's infrastructure.
-- Deleting a chunk message on Telegram destroys the backup, with no way to recover it. Use `npx telark delete <backup-id>` when that is what you actually want.
+- Deleting a chunk message on Telegram destroys the backup, with no way to recover it. Use `npx telstore delete <backup-id>` when that is what you actually want.
 - Keep the `backupId`. Without it you have to hunt for the manifest in the chat by hand.
 
 ## Where the config lives
 
-`~/.telark/config.json` (mode 600) holds `apiId`, `apiHash` and the session at the top level, with everything `config` manages under `settings`:
+`~/.telstore/config.json` (mode 600) holds `apiId`, `apiHash` and the session at the top level, with everything `config` manages under `settings`:
 
 ```json
 {
@@ -149,4 +149,4 @@ that is usually the one you want gone.
 
 Editing it by hand is fine, and a value that cannot be used is named on the next run — with the file and the key, never with a flag you did not type.
 
-`npx telark logout` **only deletes the locally stored session** and keeps the rest — the session is still alive on Telegram's side. To revoke access for good, open Telegram → Settings → Devices (Active sessions) and terminate that session.
+`npx telstore logout` **only deletes the locally stored session** and keeps the rest — the session is still alive on Telegram's side. To revoke access for good, open Telegram → Settings → Devices (Active sessions) and terminate that session.

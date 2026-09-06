@@ -36,7 +36,7 @@ function utcDay(unixSeconds) {
 }
 
 // The card is text in a chat, which means a person can edit or predate it. The id is the
-// one field restore cannot be wrong about, so it always comes from the file name telark
+// one field restore cannot be wrong about, so it always comes from the file name telstore
 // wrote; the caption only decorates. A card that cannot be read back leaves the rest
 // unknown, because inventing it would describe a backup that does not exist.
 function toRow(message) {
@@ -106,14 +106,14 @@ export async function runList(options = {}, deps = {}) {
     .map(toRow)
 
   if (rows.length === 0) {
-    log(`No backups found in ${chatName(chat)}. Upload one with: npx telark <file>`)
+    log(`No backups found in ${chatName(chat)}. Upload one with: npx telstore <file>`)
     return rows
   }
 
   for (const line of renderTable(rows)) log(line)
 
   log('')
-  log(`${rows.length} backup${rows.length === 1 ? '' : 's'}. Restore with: npx telark restore <backup-id>`)
+  log(`${rows.length} backup${rows.length === 1 ? '' : 's'}. Restore with: npx telstore restore <backup-id>`)
 
   return rows
 }

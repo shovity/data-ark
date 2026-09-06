@@ -103,7 +103,7 @@ export async function runUpload(filePath, options = {}, deps = {}) {
 
   // The chunks already in the chat were cut at the size this backup started with, and
   // nothing can re-cut them. Carrying on at a different size would abandon every one of
-  // them in the chat, where telark can no longer find them — so an unfinished backup
+  // them in the chat, where telstore can no longer find them — so an unfinished backup
   // keeps its own chunk size, and a flag that disagrees is refused rather than obeyed.
   //
   // Only a flag is a disagreement. A configured chunkSize says what to use when nobody asks
@@ -164,10 +164,10 @@ export async function runUpload(filePath, options = {}, deps = {}) {
 
     // Only a new backup adds to the directory, so this is the one place it can grow.
     // The report goes out even when the caller asked for silence: this is not narration
-    // about a transfer, it is telark dropping the only record of someone else's chunks.
+    // about a transfer, it is telstore dropping the only record of someone else's chunks.
     for (const gone of await pruneStates(configDir)) {
       writeErr(
-        `\nDropped the record of unfinished backup ${gone.id}: telark keeps the ` +
+        `\nDropped the record of unfinished backup ${gone.id}: telstore keeps the ` +
           `${MAX_STATES} most recent. The chunks it sent are still in ${gone.chat}, ` +
           'searchable by that id, but that backup can no longer be resumed.\n',
       )
@@ -185,7 +185,7 @@ export async function runUpload(filePath, options = {}, deps = {}) {
     if (delayMs > LONG_WAIT_MS) {
       warn(
         `\nTelegram wants ${formatDuration(delayMs / 1000)} of waiting before the next send ` +
-          `(${err.message}). telark is waiting and will carry on by itself, leave it running.\n`,
+          `(${err.message}). telstore is waiting and will carry on by itself, leave it running.\n`,
       )
       return
     }
@@ -289,7 +289,7 @@ export async function runUpload(filePath, options = {}, deps = {}) {
       throw new Error(
         `${absPath} changed during the upload ` +
           `(size ${stat.size} → ${after.size}, mtime ${stat.mtimeMs} → ${after.mtimeMs}). ` +
-          'This backup mixes old and new data and cannot be trusted — telark is not sending the manifest. ' +
+          'This backup mixes old and new data and cannot be trusted — telstore is not sending the manifest. ' +
           'Wait until the file settles, then run again to create a new backup.',
       )
     }
@@ -316,7 +316,7 @@ export async function runUpload(filePath, options = {}, deps = {}) {
 
     await clearState(key, configDir)
 
-    log(`\nDone. Restore with:\n  npx telark restore ${state.id}`)
+    log(`\nDone. Restore with:\n  npx telstore restore ${state.id}`)
 
     return { id: state.id, chunks: chunks.length }
   } finally {

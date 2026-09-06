@@ -32,7 +32,7 @@ function deps(configDir, messages, out, extra = {}) {
 }
 
 const DATA_TAR = manifestMessage({
-  id: 'telark-20260905-7f3a91',
+  id: 'telstore-20260905-7f3a91',
   name: 'data.tar',
   size: 22_998_546_842,
   chunks: 12,
@@ -40,7 +40,7 @@ const DATA_TAR = manifestMessage({
 })
 
 const PHOTOS = manifestMessage({
-  id: 'telark-20260901-9de447',
+  id: 'telstore-20260901-9de447',
   name: 'photos.zip',
   size: 985_949_798,
   chunks: 1,
@@ -55,8 +55,8 @@ test('every backup gets a row read from its summary card', async () => {
   await runList({}, deps(configDir, [DATA_TAR, PHOTOS], out))
 
   assert.match(out.text(), /BACKUP ID +FILE +SIZE +CHUNKS +CREATED/)
-  assert.match(out.text(), /telark-20260905-7f3a91 +data\.tar +21\.4 GB +12 +2026-09-05/)
-  assert.match(out.text(), /telark-20260901-9de447 +photos\.zip +940\.3 MB +1 +2026-09-01/)
+  assert.match(out.text(), /telstore-20260905-7f3a91 +data\.tar +21\.4 GB +12 +2026-09-05/)
+  assert.match(out.text(), /telstore-20260901-9de447 +photos\.zip +940\.3 MB +1 +2026-09-01/)
 })
 
 test('the footer counts the backups and shows how to restore one', async () => {
@@ -66,7 +66,7 @@ test('the footer counts the backups and shows how to restore one', async () => {
   await runList({}, deps(configDir, [DATA_TAR, PHOTOS], out))
 
   assert.match(out.text(), /2 backups\./)
-  assert.match(out.text(), /npx telark restore <backup-id>/)
+  assert.match(out.text(), /npx telstore restore <backup-id>/)
 })
 
 // A backup uploaded before the summary card existed still has to be listed. Its id and
@@ -76,14 +76,14 @@ test('a manifest without a summary card is listed with what the message itself k
   const out = collect()
   const old = {
     id: 1800,
-    fileName: 'telark-20260820-aa11bb.manifest.json',
-    caption: '#telark telark-20260820-aa11bb manifest',
+    fileName: 'telstore-20260820-aa11bb.manifest.json',
+    caption: '#telstore telstore-20260820-aa11bb manifest',
     date: Math.floor(Date.parse('2026-08-20T09:00:00.000Z') / 1000),
   }
 
   await runList({}, deps(configDir, [old], out))
 
-  assert.match(out.text(), /telark-20260820-aa11bb +— +— +— +2026-08-20/)
+  assert.match(out.text(), /telstore-20260820-aa11bb +— +— +— +2026-08-20/)
 })
 
 // The search asks Telegram for a tag, and Telegram decides what comes back. A chunk that
@@ -93,8 +93,8 @@ test('messages that are not manifests are left out', async () => {
   const out = collect()
   const chunk = {
     id: 1500,
-    fileName: 'telark-20260905-7f3a91.part0003',
-    caption: '📦 telark-20260905-7f3a91 · 3/12',
+    fileName: 'telstore-20260905-7f3a91.part0003',
+    caption: '📦 telstore-20260905-7f3a91 · 3/12',
     date: Math.floor(Date.parse('2026-09-05T16:00:00.000Z') / 1000),
   }
 
@@ -176,17 +176,17 @@ test('an empty Saved Messages is named, not called "me"', async () => {
 })
 
 // The id is the one field that has to be right: restore looks the manifest up by it.
-// The file name is telark's own, the caption is text anyone in the chat can edit.
+// The file name is telstore's own, the caption is text anyone in the chat can edit.
 test('the backup id comes from the file name, not from the caption', async () => {
   const configDir = await workspace()
   const out = collect()
   const edited = {
     ...DATA_TAR,
-    caption: DATA_TAR.caption.replace('telark-20260905-7f3a91', 'telark-tampered-000000'),
+    caption: DATA_TAR.caption.replace('telstore-20260905-7f3a91', 'telstore-tampered-000000'),
   }
 
   await runList({}, deps(configDir, [edited], out))
 
-  assert.match(out.text(), /telark-20260905-7f3a91/)
-  assert.doesNotMatch(out.text(), /telark-tampered-000000/)
+  assert.match(out.text(), /telstore-20260905-7f3a91/)
+  assert.doesNotMatch(out.text(), /telstore-tampered-000000/)
 })

@@ -22,7 +22,7 @@ export function documentFileName(message) {
   return named?.fileName ?? null
 }
 
-// The one place telark searches a chat. Both callers want documents and nothing else,
+// The one place telstore searches a chat. Both callers want documents and nothing else,
 // and getMessages is preferred over a raw Api.messages.Search because it handles offsets,
 // hashes and pagination itself, so we don't hand-build easily mistyped fields. The raw
 // message is kept alongside the flat fields because downloading needs it whole.
@@ -42,9 +42,9 @@ export async function searchDocuments(client, peer, { search, limit }) {
   }))
 }
 
-// How telark finds a backup's manifest, in one place because restore and delete must not
+// How telstore finds a backup's manifest, in one place because restore and delete must not
 // disagree about it. The search is by backup id, but the answer is decided by the file name
-// telark itself wrote — a caption is text a person can edit, a file name is not.
+// telstore itself wrote — a caption is text a person can edit, a file name is not.
 export async function findManifestMessage(client, peer, backupId) {
   const wanted = manifestFileName(backupId)
   const found = await searchDocuments(client, peer, { search: backupId, limit: 100 })
@@ -56,7 +56,7 @@ export async function readMessageBytes(client, message) {
   return await client.downloadMedia(message)
 }
 
-// The one place telark removes messages from a chat, and the mirror of searchDocuments
+// The one place telstore removes messages from a chat, and the mirror of searchDocuments
 // above. GramJS has its own deleteMessages, and it is the right thing to call — it resolves
 // the peer and picks between channels.DeleteMessages and messages.DeleteMessages, which is
 // exactly the choice a fake client would never catch us getting wrong.
@@ -64,7 +64,7 @@ export async function readMessageBytes(client, message) {
 // What it does on top of that is the problem: it splits the ids into batches of a hundred
 // and fires every batch at once through Promise.all. A ten-thousand-chunk backup would put
 // a hundred requests in flight together, none of them under the retry policy or the stall
-// deadline that every other network wait in telark carries. Batching here instead keeps
+// deadline that every other network wait in telstore carries. Batching here instead keeps
 // one request outstanding at a time, under both.
 //
 // Telegram does not complain about an id that is no longer there, so sending a batch twice
@@ -123,7 +123,7 @@ export async function closeQuietly(client, disconnect, onWarn) {
 
 export function assertLoggedIn(config) {
   if (!config.session || !config.apiId || !config.apiHash) {
-    throw new Error('Not logged in — run "npx telark login" first.')
+    throw new Error('Not logged in — run "npx telstore login" first.')
   }
 }
 
@@ -139,7 +139,7 @@ export async function connect(config, { verbose = false } = {}) {
   await client.connect()
 
   if (!(await client.isUserAuthorized())) {
-    throw new Error('Session expired — run "npx telark login".')
+    throw new Error('Session expired — run "npx telstore login".')
   }
 
   return client

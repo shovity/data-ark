@@ -11,7 +11,7 @@ import {
 } from '../src/settings.js'
 import { DEFAULT_CHUNK_SIZE, DEFAULT_CONCURRENCY } from '../src/chunking.js'
 
-const FILE = '/home/someone/.telark/config.json'
+const FILE = '/home/someone/.telstore/config.json'
 
 const resolve = (options, config) => resolveSettings(options, config, { file: FILE })
 
@@ -64,7 +64,7 @@ test('a stored value that cannot be used names the file, never a flag nobody typ
   assert.throws(
     () => resolve({}, { settings: { concurrency: 0 } }),
     (err) => {
-      assert.match(err.message, /concurrency in \/home\/someone\/\.telark\/config\.json/)
+      assert.match(err.message, /concurrency in \/home\/someone\/\.telstore\/config\.json/)
       assert.doesNotMatch(err.message, /--concurrency/)
       return true
     },
@@ -98,7 +98,7 @@ test('a stored destination is normalised the way a typed one is', () => {
 
 test('requireChat points at config, and offers the flag as the one-run alternative', () => {
   assert.throws(() => requireChat(resolve({}, {}).values), (err) => {
-    assert.match(err.message, /telark config chat/)
+    assert.match(err.message, /telstore config chat/)
     assert.match(err.message, /--to/)
     assert.doesNotMatch(err.message, /remember/)
     return true

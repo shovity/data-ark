@@ -32,6 +32,6 @@ test('the GramJS pieces delete removes messages with can be imported', () => {
 // Not decoration: GramJS destructures the third argument with no default of its own, so
 // calling it with two arguments throws a TypeError before anything reaches the network.
 // The arity is what says that object is required.
-test('GramJS deleteMessages takes the options object telark passes', () => {
+test('GramJS deleteMessages takes the options object telstore passes', () => {
   assert.equal(TelegramClient.prototype.deleteMessages.length, 3)
 })

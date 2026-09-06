@@ -70,14 +70,14 @@ async function main() {
 
     case 'restore':
       if (!parsed.args[0]) {
-        throw new Error('Missing backup id. Example: npx telark restore telark-20260905-7f3a91')
+        throw new Error('Missing backup id. Example: npx telstore restore telstore-20260905-7f3a91')
       }
       await runRestore(parsed.args[0], parsed.options)
       return
 
     case 'delete':
       if (!parsed.args[0]) {
-        throw new Error('Missing backup id. Example: npx telark delete telark-20260905-7f3a91')
+        throw new Error('Missing backup id. Example: npx telstore delete telstore-20260905-7f3a91')
       }
       await runDelete(parsed.args[0], parsed.options)
       return

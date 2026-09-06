@@ -33,7 +33,7 @@ test('the Telegram logger is silent unless --verbose is given', () => {
 })
 
 // GramJS's own deleteMessages splits the ids into batches of 100 and fires every batch at
-// once through Promise.all. telark batches them itself so exactly one request is in
+// once through Promise.all. telstore batches them itself so exactly one request is in
 // flight at a time, under the same retry and stall policy as every other network wait.
 function recordingClient({ failTimes = 0, failAlways = false, hang = false } = {}) {
   const batches = []

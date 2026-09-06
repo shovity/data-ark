@@ -8,7 +8,7 @@ import { buildManifest, manifestFileName, serializeManifest } from '../src/manif
 import { saveState, stateDir } from '../src/state.js'
 import { LOGGED_IN, collect, tempDir } from './helpers.js'
 
-const ID = 'telark-20260905-7f3a91'
+const ID = 'telstore-20260905-7f3a91'
 
 async function workspace(settings = {}) {
   const configDir = await tempDir('delete')
@@ -233,8 +233,8 @@ test('a manifest describing a different backup is refused', async () => {
   const rec = recorder()
 
   await assert.rejects(
-    () => runDelete(ID, {}, deps(configDir, { manifest: manifestBody({ id: 'telark-somebody-else' }), rec })),
-    /not telark-20260905-7f3a91/,
+    () => runDelete(ID, {}, deps(configDir, { manifest: manifestBody({ id: 'telstore-somebody-else' }), rec })),
+    /not telstore-20260905-7f3a91/,
   )
   assert.deepEqual(rec.calls, [])
 })

@@ -22,7 +22,7 @@ function sampleChunks() {
 
 function sampleManifest(overrides = {}) {
   return buildManifest({
-    id: 'telark-20260905-7f3a91',
+    id: 'telstore-20260905-7f3a91',
     name: 'data.tar',
     size: 100,
     chunkSize: 40,
@@ -32,31 +32,31 @@ function sampleManifest(overrides = {}) {
   })
 }
 
-test('newBackupId follows the telark-YYYYMMDD-hex shape', () => {
+test('newBackupId follows the telstore-YYYYMMDD-hex shape', () => {
   const id = newBackupId(new Date('2026-09-05T07:40:12.000Z'), () => '7f3a91')
-  assert.equal(id, 'telark-20260905-7f3a91')
+  assert.equal(id, 'telstore-20260905-7f3a91')
 })
 
 test('newBackupId is genuinely random and well formed', () => {
   const a = newBackupId()
   const b = newBackupId()
-  assert.match(a, /^telark-\d{8}-[0-9a-f]{6}$/)
+  assert.match(a, /^telstore-\d{8}-[0-9a-f]{6}$/)
   assert.notEqual(a, b)
 })
 
 test('chunkFileName numbers from 1 and pads to four digits', () => {
-  assert.equal(chunkFileName('telark-1', 0), 'telark-1.part0001')
-  assert.equal(chunkFileName('telark-1', 41), 'telark-1.part0042')
-  assert.equal(chunkFileName('telark-1', 1233), 'telark-1.part1234')
+  assert.equal(chunkFileName('telstore-1', 0), 'telstore-1.part0001')
+  assert.equal(chunkFileName('telstore-1', 41), 'telstore-1.part0042')
+  assert.equal(chunkFileName('telstore-1', 1233), 'telstore-1.part1234')
 })
 
 test('manifestFileName ends in .manifest.json', () => {
-  assert.equal(manifestFileName('telark-1'), 'telark-1.manifest.json')
+  assert.equal(manifestFileName('telstore-1'), 'telstore-1.manifest.json')
 })
 
 test('buildManifest stamps version 1 and orders the chunks', () => {
   const m = buildManifest({
-    id: 'telark-1',
+    id: 'telstore-1',
     name: 'data.tar',
     size: 100,
     chunkSize: 40,
@@ -104,7 +104,7 @@ test('parseManifest catches a skewed chunk layout even when the total is right',
   // the right total, the right count, contiguous i and matching per-chunk sha256 —
   // but restore writes chunk i at offset i*400, producing a 1200-byte file with a hole.
   const m = buildManifest({
-    id: 'telark-1',
+    id: 'telstore-1',
     name: 'data.tar',
     size: 1000,
     chunkSize: 400,
@@ -121,7 +121,7 @@ test('parseManifest catches a skewed chunk layout even when the total is right',
 
 test('parseManifest catches a last chunk longer than the remainder', () => {
   const m = buildManifest({
-    id: 'telark-1',
+    id: 'telstore-1',
     name: 'data.tar',
     size: 100,
     chunkSize: 40,
@@ -138,7 +138,7 @@ test('parseManifest catches a last chunk longer than the remainder', () => {
 
 test('parseManifest accepts a correct uniform layout', () => {
   const m = buildManifest({
-    id: 'telark-1',
+    id: 'telstore-1',
     name: 'data.tar',
     size: 1000,
     chunkSize: 400,

@@ -1,5 +1,5 @@
 {
-  "name": "telark",
+  "name": "telstore",
   "version": "0.1.0",
   "description": "Split large files into chunks and store them on Telegram",
   "keywords": [
@@ -11,19 +11,19 @@
     "cli",
     "mtproto"
   ],
-  "homepage": "https://github.com/shovity/telark#readme",
+  "homepage": "https://github.com/shovity/telstore#readme",
   "bugs": {
-    "url": "https://github.com/shovity/telark/issues"
+    "url": "https://github.com/shovity/telstore/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/shovity/telark.git"
+    "url": "git+https://github.com/shovity/telstore.git"
   },
   "type": "module",
   "license": "MIT",
   "author": "shovity",
   "bin": {
-    "telark": "bin/telark.js"
+    "telstore": "bin/telstore.js"
   },
   "files": [
     "bin",

@@ -38,7 +38,7 @@ function fakeClient(content, { partSize = 100 } = {}) {
 }
 
 async function tempFd(size) {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'telark-download-'))
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'telstore-download-'))
   const file = path.join(dir, 'target.bin')
   const handle = await fs.open(file, 'w+')
   if (size) await handle.truncate(size)
@@ -96,7 +96,7 @@ test('whatever is passed to iterDownload must cast to an InputFileLocation', asy
     mimeType: 'application/octet-stream',
     size: bigInt(10),
     dcId: 2,
-    attributes: [new Api.DocumentAttributeFilename({ fileName: 'telark.part0001' })],
+    attributes: [new Api.DocumentAttributeFilename({ fileName: 'telstore.part0001' })],
   })
   const message = { id: 999, media: new Api.MessageMediaDocument({ document }) }
   const client = fakeClient(Buffer.alloc(10))
@@ -258,7 +258,7 @@ test('the resume offset is one GramJS itself accepts', async () => {
     mimeType: 'application/octet-stream',
     size: bigInt(1000),
     dcId: 2,
-    attributes: [new Api.DocumentAttributeFilename({ fileName: 'telark.part0001' })],
+    attributes: [new Api.DocumentAttributeFilename({ fileName: 'telstore.part0001' })],
   })
   const logger = { info() {}, debug() {}, warn() {} }
 
@@ -729,7 +729,7 @@ test('a mid-document slice offset is one GramJS itself accepts', async () => {
     mimeType: 'application/octet-stream',
     size: bigInt(content.length),
     dcId: 2,
-    attributes: [new Api.DocumentAttributeFilename({ fileName: 'telark.part0001' })],
+    attributes: [new Api.DocumentAttributeFilename({ fileName: 'telstore.part0001' })],
   })
 
   const iter = iterDownload(

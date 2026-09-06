@@ -152,16 +152,16 @@ test('unsetting something that was never set says so rather than failing', async
   assert.deepEqual((await loadConfig(configDir)).settings, {})
 })
 
-// The listing shows keys telark does not know so a typo is visible from the command
+// The listing shows keys telstore does not know so a typo is visible from the command
 // rather than only from opening the file that also holds the session — which means --unset
 // has to reach them too, or the only cure is that same file.
-test('a setting telark does not know is shown, and can be removed', async () => {
+test('a setting telstore does not know is shown, and can be removed', async () => {
   const configDir = await tempDir('config')
   await saveConfig({ settings: { chat: 'me', chukSize: '500MB' } }, configDir)
   const shown = collect()
 
   await runConfig([], {}, deps(configDir, shown))
-  assert.match(shown.text(), /Ignored, telark does not know these: chukSize/)
+  assert.match(shown.text(), /Ignored, telstore does not know these: chukSize/)
 
   await runConfig(['chukSize'], { unset: true }, deps(configDir, collect()))
   assert.deepEqual((await loadConfig(configDir)).settings, { chat: 'me' })
@@ -182,7 +182,7 @@ test('a credential is named as login business rather than as a misspelling', asy
 
   await assert.rejects(
     () => runConfig(['session', 'x'], {}, deps(configDir, collect())),
-    /managed by "npx telark login"/,
+    /managed by "npx telstore login"/,
   )
 })
 

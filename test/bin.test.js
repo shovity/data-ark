@@ -8,7 +8,7 @@ import { promises as fs } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 const run = promisify(execFile)
-const BIN = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'telark.js')
+const BIN = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'telstore.js')
 
 async function runCli(args) {
   try {
@@ -22,7 +22,7 @@ async function runCli(args) {
 test('--help prints the help and exits 0', async () => {
   const { code, stdout } = await runCli(['--help'])
   assert.equal(code, 0)
-  assert.match(stdout, /npx telark restore/)
+  assert.match(stdout, /npx telstore restore/)
 })
 
 test('no arguments prints the help too', async () => {
@@ -56,8 +56,8 @@ test(
   'SIGINT during login: exits 130 without claiming anything false about progress',
   { timeout: 10_000 },
   async () => {
-    // HOME points at an isolated temp directory so login never touches the real ~/.telark.
-    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'telark-sigint-'))
+    // HOME points at an isolated temp directory so login never touches the real ~/.telstore.
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'telstore-sigint-'))
 
     try {
       const child = spawn(process.execPath, [BIN, 'login'], {
@@ -104,8 +104,8 @@ test(
 )
 
 test('list without a login gives a short error, not a stack trace', async () => {
-  // HOME points at an isolated temp directory so this never reads the real ~/.telark.
-  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'telark-list-bin-'))
+  // HOME points at an isolated temp directory so this never reads the real ~/.telstore.
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'telstore-list-bin-'))
 
   try {
     const { stdout, stderr } = await run(process.execPath, [BIN, 'list'], {
@@ -124,7 +124,7 @@ test('list without a login gives a short error, not a stack trace', async () => 
 // configDir. This is the only place the real path, the real argv and the real exit codes
 // are exercised together.
 test('config writes a setting and reads it back through the real argv', async () => {
-  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'telark-config-bin-'))
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'telstore-config-bin-'))
 
   try {
     const env = { ...process.env, HOME: home }
@@ -138,7 +138,7 @@ test('config writes a setting and reads it back through the real argv', async ()
     const list = await run(process.execPath, [BIN, 'config'], { env })
     assert.match(list.stdout, /concurrency\s+8\s+\(default\)/)
 
-    const stored = JSON.parse(await fs.readFile(path.join(home, '.telark', 'config.json'), 'utf8'))
+    const stored = JSON.parse(await fs.readFile(path.join(home, '.telstore', 'config.json'), 'utf8'))
     assert.deepEqual(stored, { settings: { chat: -1001234567890 } })
   } finally {
     await fs.rm(home, { recursive: true, force: true })
@@ -149,7 +149,7 @@ test('--to with nothing to upload names the command that saves a destination', a
   const { code, stderr } = await runCli(['--to', '@my_backups'])
 
   assert.equal(code, 2)
-  assert.match(stderr, /telark config chat @my_backups/)
+  assert.match(stderr, /telstore config chat @my_backups/)
   assert.doesNotMatch(stderr, /at .*\.js:\d+/)
 })
 
@@ -162,5 +162,5 @@ test('delete without a backup id explains what is missing', async () => {
 
 test('--help mentions delete', async () => {
   const { stdout } = await runCli(['--help'])
-  assert.match(stdout, /npx telark delete/)
+  assert.match(stdout, /npx telstore delete/)
 })

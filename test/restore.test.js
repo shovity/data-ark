@@ -17,7 +17,7 @@ function sha(buf) {
 /**
  * Builds a fake "chat" holding the chunks and manifest of one backup.
  */
-function fakeBackup({ id = 'telark-20260905-7f3a91', name = 'data.tar', chunkSize = 400, total = 1000 } = {}) {
+function fakeBackup({ id = 'telstore-20260905-7f3a91', name = 'data.tar', chunkSize = 400, total = 1000 } = {}) {
   const content = randomBytes(total)
   const messages = []
   const chunks = []
@@ -84,7 +84,7 @@ function deps(client, configDir) {
 }
 
 async function tempConfig(chat = '@store') {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'telark-restore-'))
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'telstore-restore-'))
   const configDir = path.join(dir, 'config')
   await saveConfig({ apiId: 1, apiHash: 'h', session: 's', settings: { chat } }, configDir)
   return { dir, configDir }
@@ -212,7 +212,7 @@ test('chunk progress tracks the downloaded data instead of sticking at 0%', asyn
     },
   }
 
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'telark-progress-'))
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'telstore-progress-'))
   const handle = await fs.open(path.join(dir, 'out.bin'), 'w+')
   await handle.truncate(900)
 
@@ -403,7 +403,7 @@ test('an attempt that took a minute to fail is announced on the first retry', as
   assert.match(text, /retry 1 /)
 })
 
-test('a wait longer than a minute says telark is waiting, not stuck', async () => {
+test('a wait longer than a minute says telstore is waiting, not stuck', async () => {
   const backup = fakeBackup()
   const { dir, configDir } = await tempConfig()
   const out = path.join(dir, 'out.tar')
@@ -428,7 +428,7 @@ test('a wait longer than a minute says telark is waiting, not stuck', async () =
 
 test('realDownloadChunk carries the retry options through to the downloader', async () => {
   const backup = fakeBackup({ total: 100, chunkSize: 100 })
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'telark-restore-'))
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'telstore-restore-'))
   const handle = await fs.open(path.join(dir, 'out.bin'), 'w+')
   const attempts = []
   let failed = false
