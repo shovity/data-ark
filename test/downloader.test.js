@@ -2,7 +2,6 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash, randomBytes } from 'node:crypto'
 import { promises as fs } from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 
 import bigInt from 'big-integer'
@@ -12,6 +11,8 @@ import { iterDownload } from 'teleproto/client/downloads.js'
 
 import { downloadToFile } from '../src/downloader.js'
 import { SLICE_SIZE } from '../src/chunking.js'
+
+import { tempDir } from './helpers.js'
 
 // The document is the chunk: its byte 0 is the chunk's byte 0. Callers must say how long it
 // is, because downloadToFile plans its slices from that length.
@@ -78,7 +79,7 @@ async function realGetFileRequests(offset, { size, requestSize = 512 * 1024 }) {
 }
 
 async function tempFd(size) {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'telstore-download-'))
+  const dir = await tempDir('download')
   const file = path.join(dir, 'target.bin')
   const handle = await fs.open(file, 'w+')
   if (size) await handle.truncate(size)

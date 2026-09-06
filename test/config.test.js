@@ -12,21 +12,19 @@ import {
   saveConfig,
 } from '../src/config.js'
 
-async function tempDir() {
-  return await fs.mkdtemp(path.join(os.tmpdir(), 'telstore-config-'))
-}
+import { tempDir } from './helpers.js'
 
 test('defaultConfigDir points at ~/.telstore', () => {
   assert.equal(defaultConfigDir(), path.join(os.homedir(), '.telstore'))
 })
 
 test('loadConfig returns an empty object when there is no file yet', async () => {
-  const dir = await tempDir()
+  const dir = await tempDir('config')
   assert.deepEqual(await loadConfig(dir), {})
 })
 
 test('saveConfig then loadConfig round-trips the data', async () => {
-  const dir = await tempDir()
+  const dir = await tempDir('config')
   const config = { apiId: 12345, apiHash: 'abc', session: 'sess', settings: { chat: '@store' } }
 
   await saveConfig(config, dir)
@@ -35,7 +33,7 @@ test('saveConfig then loadConfig round-trips the data', async () => {
 })
 
 test('saveConfig creates a directory that does not exist yet', async () => {
-  const dir = path.join(await tempDir(), 'does', 'not', 'exist')
+  const dir = path.join(await tempDir('config'), 'does', 'not', 'exist')
 
   await saveConfig({ settings: { chat: 'me' } }, dir)
 
@@ -43,7 +41,7 @@ test('saveConfig creates a directory that does not exist yet', async () => {
 })
 
 test('the config file is readable and writable by its owner only', async () => {
-  const dir = await tempDir()
+  const dir = await tempDir('config')
 
   await saveConfig({ session: 'secret' }, dir)
 
@@ -52,7 +50,7 @@ test('the config file is readable and writable by its owner only', async () => {
 })
 
 test('saveConfig leaves no temporary file behind', async () => {
-  const dir = await tempDir()
+  const dir = await tempDir('config')
 
   await saveConfig({ settings: { chat: 'me' } }, dir)
 
@@ -60,7 +58,7 @@ test('saveConfig leaves no temporary file behind', async () => {
 })
 
 test('clearSession drops the session but keeps everything else', async () => {
-  const dir = await tempDir()
+  const dir = await tempDir('config')
   await saveConfig({ apiId: 1, apiHash: 'h', session: 's', settings: { chat: '@store' } }, dir)
 
   await clearSession(dir)
@@ -69,7 +67,7 @@ test('clearSession drops the session but keeps everything else', async () => {
 })
 
 test('loadConfig gives a clear error when the file is corrupt', async () => {
-  const dir = await tempDir()
+  const dir = await tempDir('config')
   await fs.writeFile(path.join(dir, 'config.json'), '{ broken')
 
   await assert.rejects(() => loadConfig(dir), /Corrupt config file/)
@@ -92,7 +90,7 @@ test('settings telstore does not know are left exactly where they were found', (
 // kind of value would have telstore run cheerfully on built-in defaults while the user's
 // own choices sat in the file being ignored. Name it instead.
 test('a settings key that is not a group of settings is named, not stepped over', async () => {
-  const dir = await tempDir()
+  const dir = await tempDir('config')
   await fs.writeFile(path.join(dir, 'config.json'), '{"session":"s","settings":5}')
 
   await assert.rejects(() => loadConfig(dir), (err) => {
@@ -103,7 +101,7 @@ test('a settings key that is not a group of settings is named, not stepped over'
 })
 
 test('a config file holding a list rather than an object is refused', async () => {
-  const dir = await tempDir()
+  const dir = await tempDir('config')
   await fs.writeFile(path.join(dir, 'config.json'), '[1,2]')
 
   await assert.rejects(() => loadConfig(dir), /holds a list/)
@@ -113,7 +111,7 @@ test('a config file holding a list rather than an object is refused', async () =
 // nothing but telstore touched this file. `config` invites people to edit it by hand, and a
 // stray comma is not a reason to throw someone's session away.
 test('a syntax error asks for the syntax to be fixed before it offers to delete the session', async () => {
-  const dir = await tempDir()
+  const dir = await tempDir('config')
   await fs.writeFile(path.join(dir, 'config.json'), '{"session": "s",}')
 
   await assert.rejects(() => loadConfig(dir), (err) => {

@@ -2,7 +2,6 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash, randomBytes } from 'node:crypto'
 import { promises as fs } from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 
 import { runUpload } from '../src/commands/upload.js'
@@ -10,6 +9,8 @@ import { parseManifestCaption } from '../src/caption.js'
 import { parseManifest } from '../src/manifest.js'
 import { saveConfig } from '../src/config.js'
 import { loadState, stateFile, stateKey, MAX_STATES } from '../src/state.js'
+
+import { tempDir } from './helpers.js'
 
 /**
  * Fake client that collects every part by fileId and, when sendFile is called,
@@ -56,7 +57,7 @@ function fakeClient({ failOnChunk = null } = {}) {
 }
 
 async function tempWorkspace(fileSize) {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'telstore-upload-cmd-'))
+  const dir = await tempDir('upload-cmd')
   const filePath = path.join(dir, 'data.tar')
   const content = randomBytes(fileSize)
   await fs.writeFile(filePath, content)

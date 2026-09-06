@@ -1,7 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { promises as fs } from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 
 import {
@@ -18,9 +17,7 @@ import {
   canResume,
 } from '../src/state.js'
 
-async function tempDir() {
-  return await fs.mkdtemp(path.join(os.tmpdir(), 'telstore-state-'))
-}
+import { tempDir } from './helpers.js'
 
 function sampleState(overrides = {}) {
   return {
@@ -50,17 +47,17 @@ test('stateKey changes when the file changes', () => {
 })
 
 test('stateDir lives under the config directory', async () => {
-  const dir = await tempDir()
+  const dir = await tempDir('state')
   assert.equal(stateDir(dir), path.join(dir, 'state'))
 })
 
 test('loadState returns null when nothing is stored', async () => {
-  const dir = await tempDir()
+  const dir = await tempDir('state')
   assert.equal(await loadState('missing', dir), null)
 })
 
 test('saveState then loadState round-trips the data', async () => {
-  const dir = await tempDir()
+  const dir = await tempDir('state')
   const state = sampleState()
 
   await saveState('k1', state, dir)
@@ -69,7 +66,7 @@ test('saveState then loadState round-trips the data', async () => {
 })
 
 test('markChunkDone persists progress immediately', async () => {
-  const dir = await tempDir()
+  const dir = await tempDir('state')
   const state = sampleState()
   await saveState('k1', state, dir)
 
@@ -80,7 +77,7 @@ test('markChunkDone persists progress immediately', async () => {
 })
 
 test('markChunkDone accumulates instead of overwriting earlier chunks', async () => {
-  const dir = await tempDir()
+  const dir = await tempDir('state')
   let state = sampleState()
   await saveState('k1', state, dir)
 
@@ -92,7 +89,7 @@ test('markChunkDone accumulates instead of overwriting earlier chunks', async ()
 })
 
 test('saveState leaves no temporary file behind', async () => {
-  const dir = await tempDir()
+  const dir = await tempDir('state')
 
   await saveState('k1', sampleState(), dir)
 
@@ -100,7 +97,7 @@ test('saveState leaves no temporary file behind', async () => {
 })
 
 test('clearState removes the state and stays quiet if it is already gone', async () => {
-  const dir = await tempDir()
+  const dir = await tempDir('state')
   await saveState('k1', sampleState(), dir)
 
   await clearState('k1', dir)
@@ -110,7 +107,7 @@ test('clearState removes the state and stays quiet if it is already gone', async
 })
 
 test('listStates returns every unfinished backup and skips unreadable files', async () => {
-  const dir = await tempDir()
+  const dir = await tempDir('state')
   await saveState('aaa', sampleState({ id: 'telstore-1' }), dir)
   await saveState('bbb', sampleState({ id: 'telstore-2', path: '/home/ai/vm.qcow2' }), dir)
   await fs.writeFile(path.join(stateDir(dir), 'ccc.json'), '{ not json')
@@ -127,7 +124,7 @@ test('listStates returns every unfinished backup and skips unreadable files', as
 // filed under, so the caller needs that key — and only the file name has it, since the
 // record's own numbers are what a rewritten file makes stale.
 test('listStates hands back the key each record is filed under', async () => {
-  const dir = await tempDir()
+  const dir = await tempDir('state')
   await saveState('aaa', sampleState({ id: 'telstore-1' }), dir)
 
   assert.deepEqual(
@@ -137,7 +134,7 @@ test('listStates hands back the key each record is filed under', async () => {
 })
 
 test('listStates on a machine that has never run an upload returns nothing', async () => {
-  assert.deepEqual(await listStates(await tempDir()), [])
+  assert.deepEqual(await listStates(await tempDir('state')), [])
 })
 
 // Every state file is written the moment a chunk lands, so the file's own mtime is the
@@ -149,7 +146,7 @@ async function saveStateAged(key, state, dir, ageMinutes) {
 }
 
 test('pruneStates keeps the newest states and drops the older ones', async () => {
-  const dir = await tempDir()
+  const dir = await tempDir('state')
   await saveStateAged('old', sampleState({ id: 'telstore-old' }), dir, 300)
   await saveStateAged('mid', sampleState({ id: 'telstore-mid' }), dir, 200)
   await saveStateAged('new', sampleState({ id: 'telstore-new' }), dir, 100)
@@ -161,7 +158,7 @@ test('pruneStates keeps the newest states and drops the older ones', async () =>
 })
 
 test('pruneStates names the backups it dropped', async () => {
-  const dir = await tempDir()
+  const dir = await tempDir('state')
   await saveStateAged('old', sampleState({ id: 'telstore-old' }), dir, 300)
   await saveStateAged('new', sampleState({ id: 'telstore-new' }), dir, 100)
 
@@ -171,7 +168,7 @@ test('pruneStates names the backups it dropped', async () => {
 })
 
 test('pruneStates below the limit changes nothing', async () => {
-  const dir = await tempDir()
+  const dir = await tempDir('state')
   await saveStateAged('a', sampleState({ id: 'telstore-1' }), dir, 200)
   await saveStateAged('b', sampleState({ id: 'telstore-2' }), dir, 100)
 
@@ -180,7 +177,7 @@ test('pruneStates below the limit changes nothing', async () => {
 })
 
 test('pruneStates deletes an unreadable state file without naming it', async () => {
-  const dir = await tempDir()
+  const dir = await tempDir('state')
   await saveStateAged('good', sampleState({ id: 'telstore-good' }), dir, 100)
   await fs.writeFile(path.join(stateDir(dir), 'broken.json'), '{ not json')
   const old = new Date(Date.UTC(2026, 8, 5) - 300 * 60_000)
@@ -193,7 +190,7 @@ test('pruneStates deletes an unreadable state file without naming it', async () 
 })
 
 test('pruneStates on a machine that has never run an upload does nothing', async () => {
-  assert.deepEqual(await pruneStates(await tempDir()), [])
+  assert.deepEqual(await pruneStates(await tempDir('state')), [])
 })
 
 test('the default limit is 20 unfinished backups', () => {
@@ -201,7 +198,7 @@ test('the default limit is 20 unfinished backups', () => {
 })
 
 test('findStates returns the record of a backup together with the file it came from', async () => {
-  const dir = await tempDir()
+  const dir = await tempDir('state')
   await saveState('abc123', sampleState({ id: 'telstore-wanted' }), dir)
   await saveState('def456', sampleState({ id: 'telstore-other' }), dir)
 
@@ -218,7 +215,7 @@ test('findStates returns the record of a backup together with the file it came f
 // naming no file at all, and clearState ignores a file that is not there — telstore would
 // report a record dropped that is still sitting on disk.
 test('findStates reports the real file name even when the record disagrees with it', async () => {
-  const dir = await tempDir()
+  const dir = await tempDir('state')
   await saveState('handpicked', sampleState({ id: 'telstore-wanted', path: '/somewhere/else' }), dir)
 
   const [found] = await findStates('telstore-wanted', dir)
@@ -227,7 +224,7 @@ test('findStates reports the real file name even when the record disagrees with 
 })
 
 test('findStates returns every record claiming the same backup id', async () => {
-  const dir = await tempDir()
+  const dir = await tempDir('state')
   await saveState('one', sampleState({ id: 'telstore-twin' }), dir)
   await saveState('two', sampleState({ id: 'telstore-twin', path: '/other.tar' }), dir)
 
@@ -235,7 +232,7 @@ test('findStates returns every record claiming the same backup id', async () => 
 })
 
 test('findStates skips a state file that cannot be read instead of failing', async () => {
-  const dir = await tempDir()
+  const dir = await tempDir('state')
   await saveState('good', sampleState({ id: 'telstore-wanted' }), dir)
   await fs.writeFile(path.join(stateDir(dir), 'broken.json'), '{ not json')
 
@@ -243,7 +240,7 @@ test('findStates skips a state file that cannot be read instead of failing', asy
 })
 
 test('findStates on a machine that has never run an upload finds nothing', async () => {
-  assert.deepEqual(await findStates('telstore-wanted', await tempDir()), [])
+  assert.deepEqual(await findStates('telstore-wanted', await tempDir('state')), [])
 })
 
 // A record is filed under a key hashed from the file's path, size and mtime, and runUpload
@@ -259,14 +256,14 @@ async function recordFor(dir, name = 'data.tar', body = 'hello') {
 }
 
 test('canResume accepts a file that still matches the record it is filed under', async () => {
-  const dir = await tempDir()
+  const dir = await tempDir('state')
   const { state, key } = await recordFor(dir)
 
   assert.deepEqual(await canResume(key, state), { ok: true })
 })
 
 test('canResume refuses a file that has been rewritten since the backup started', async () => {
-  const dir = await tempDir()
+  const dir = await tempDir('state')
   const { file, state, key } = await recordFor(dir)
   await fs.writeFile(file, 'hello again, longer this time')
 
@@ -276,7 +273,7 @@ test('canResume refuses a file that has been rewritten since the backup started'
 // Same bytes, later mtime: the size alone would call this resumable, but stateKey hashes
 // the mtime too, so runUpload would file it under a new key and start a second backup.
 test('canResume refuses a file touched since the backup started, size unchanged', async () => {
-  const dir = await tempDir()
+  const dir = await tempDir('state')
   const { file, state, key } = await recordFor(dir)
   const later = new Date(Date.now() + 60_000)
   await fs.utimes(file, later, later)
@@ -285,7 +282,7 @@ test('canResume refuses a file touched since the backup started, size unchanged'
 })
 
 test('canResume refuses a file that is no longer there', async () => {
-  const dir = await tempDir()
+  const dir = await tempDir('state')
   const { file, state, key } = await recordFor(dir)
   await fs.unlink(file)
 
@@ -293,7 +290,7 @@ test('canResume refuses a file that is no longer there', async () => {
 })
 
 test('canResume refuses a path that is no longer a file', async () => {
-  const dir = await tempDir()
+  const dir = await tempDir('state')
   const { file, state, key } = await recordFor(dir)
   await fs.unlink(file)
   await fs.mkdir(file)

@@ -2,7 +2,6 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash, randomBytes } from 'node:crypto'
 import { promises as fs } from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 
 import { runRestore, realDownloadChunk } from '../src/commands/restore.js'
@@ -10,6 +9,8 @@ import { buildManifest, serializeManifest, manifestFileName } from '../src/manif
 import { saveConfig } from '../src/config.js'
 import { createProgress } from '../src/progress.js'
 import { DEFAULT_DOWNLOAD_CONCURRENCY } from '../src/chunking.js'
+
+import { tempDir } from './helpers.js'
 
 function sha(buf) {
   return createHash('sha256').update(buf).digest('hex')
@@ -85,7 +86,7 @@ function deps(client, configDir) {
 }
 
 async function tempConfig(chat = '@store') {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'telstore-restore-'))
+  const dir = await tempDir('restore')
   const configDir = path.join(dir, 'config')
   await saveConfig({ apiId: 1, apiHash: 'h', session: 's', settings: { chat } }, configDir)
   return { dir, configDir }
@@ -213,7 +214,7 @@ test('chunk progress tracks the downloaded data instead of sticking at 0%', asyn
     },
   }
 
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'telstore-progress-'))
+  const dir = await tempDir('progress')
   const handle = await fs.open(path.join(dir, 'out.bin'), 'w+')
   await handle.truncate(900)
 
@@ -429,7 +430,7 @@ test('a wait longer than a minute says telstore is waiting, not stuck', async ()
 
 test('realDownloadChunk carries the retry options through to the downloader', async () => {
   const backup = fakeBackup({ total: 100, chunkSize: 100 })
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'telstore-restore-'))
+  const dir = await tempDir('restore')
   const handle = await fs.open(path.join(dir, 'out.bin'), 'w+')
   const attempts = []
   let failed = false

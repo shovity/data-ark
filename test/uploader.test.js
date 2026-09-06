@@ -2,12 +2,13 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash, randomBytes } from 'node:crypto'
 import { promises as fs } from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 
 import { Api } from 'teleproto'
 
 import { uploadRange, LARGE_FILE_THRESHOLD } from '../src/uploader.js'
+
+import { tempDir } from './helpers.js'
 
 /**
  * Fake client: records every upload request so tests can reassemble the parts,
@@ -60,7 +61,7 @@ function reassemble(requests) {
 }
 
 async function tempFile(content) {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'telstore-upload-'))
+  const dir = await tempDir('upload')
   const file = path.join(dir, 'source.bin')
   await fs.writeFile(file, content)
   const handle = await fs.open(file, 'r')
