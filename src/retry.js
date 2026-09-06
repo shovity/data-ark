@@ -22,12 +22,15 @@ export async function withRetry(fn, options = {}) {
     attempts = DEFAULT_ATTEMPTS,
     baseDelayMs = DEFAULT_BASE_DELAY_MS,
     sleep = defaultSleep,
+    now = Date.now,
     onRetry,
   } = options
 
   let lastError
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const startedAt = now()
+
     try {
       return await fn()
     } catch (err) {
@@ -41,7 +44,11 @@ export async function withRetry(fn, options = {}) {
           ? Math.min(baseDelayMs * 2 ** (attempt - 1), MAX_BACKOFF_MS)
           : flood * 1000
 
-      onRetry?.(err, attempt, delayMs)
+      // How long the failed attempt itself took. A request that errors instantly costs the
+      // user nothing but a line of output; one that took a minute to give up left the
+      // progress bar frozen for that minute. Only the caller can weigh the two, so it is
+      // told which kind this was.
+      onRetry?.(err, attempt, delayMs, now() - startedAt)
       await sleep(delayMs)
     }
   }

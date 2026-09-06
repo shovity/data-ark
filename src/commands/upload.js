@@ -38,6 +38,11 @@ import { uploadRange } from '../uploader.js'
 // Above this threshold the wait must be spelled out, per spec §8.
 const LONG_WAIT_MS = 60_000
 
+// A transient error that resolves itself on the next try is not news, and one line per
+// occurrence buries the progress bar in a wall of text. Stay quiet until the third retry:
+// by then the trouble has outlived two backoffs and is worth saying out loud.
+const ANNOUNCE_AFTER_ATTEMPT = 3
+
 // Chunks and manifests differ only in where the bytes come from. Everything Telegram is
 // told about them — document, not preview; this exact file name — is decided once.
 async function sendDocument(client, peer, { file, fileName, caption }) {
@@ -170,7 +175,7 @@ export async function runUpload(filePath, options = {}, deps = {}) {
 
   // Retries and FLOOD_WAIT must be announced: a silent FLOOD_WAIT_3600 leaves the user
   // staring at a frozen progress bar for an hour, assuming the process has hung.
-  function onRetry(err, attempt, delayMs) {
+  function onRetry(err, attempt, delayMs, elapsedMs = 0) {
     if (delayMs > LONG_WAIT_MS) {
       warn(
         `\nTelegram wants ${formatDuration(delayMs / 1000)} of waiting before the next send ` +
@@ -178,6 +183,11 @@ export async function runUpload(filePath, options = {}, deps = {}) {
       )
       return
     }
+
+    // The exception to staying quiet: an attempt that took a minute to fail spent that
+    // minute with the bar frozen, which is exactly what a hang looks like. Those are worth
+    // a line the first time, whatever the attempt number.
+    if (attempt < ANNOUNCE_AFTER_ATTEMPT && elapsedMs < LONG_WAIT_MS) return
 
     warn(
       `\nTemporary error (${err.message}), retry ${attempt} in ` +

@@ -13,6 +13,11 @@ import { createProgress, formatBytes, formatDuration } from '../progress.js'
 // than the time a user would spend wondering about it.
 const LONG_WAIT_MS = 60_000
 
+// A transient error that resolves itself on the next try is not news, and one line per
+// occurrence buries the progress bar in a wall of text. Stay quiet until the third retry:
+// by then the trouble has outlived two backoffs and is worth saying out loud.
+const ANNOUNCE_AFTER_ATTEMPT = 3
+
 async function realSearchManifest(client, peer, backupId) {
   const wanted = manifestFileName(backupId)
   const found = await searchDocuments(client, peer, { search: backupId, limit: 100 })
@@ -81,7 +86,7 @@ export async function runRestore(backupId, options = {}, deps = {}) {
   // A restore keeps no progress file, so a part that comes back -503 is retried rather than
   // thrown away — and a retry nobody is told about is indistinguishable from a hung transfer,
   // because the progress bar simply stops moving while the wait runs.
-  function onRetry(err, attempt, delayMs) {
+  function onRetry(err, attempt, delayMs, elapsedMs = 0) {
     if (delayMs > LONG_WAIT_MS) {
       warn(
         `\nTelegram wants ${formatDuration(delayMs / 1000)} of waiting before the next part ` +
@@ -89,6 +94,11 @@ export async function runRestore(backupId, options = {}, deps = {}) {
       )
       return
     }
+
+    // The exception to staying quiet: an attempt that took a minute to fail spent that
+    // minute with the bar frozen, which is exactly what a hang looks like. Those are worth
+    // a line the first time, whatever the attempt number.
+    if (attempt < ANNOUNCE_AFTER_ATTEMPT && elapsedMs < LONG_WAIT_MS) return
 
     warn(
       `\nTemporary error (${err.message}), retry ${attempt} in ` +

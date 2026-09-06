@@ -655,15 +655,18 @@ test('a long FLOOD_WAIT is announced clearly instead of hanging in silence', asy
   assert.match(output, /leave it running/)
 })
 
-test('a short temporary error is announced too, with the attempt number', async () => {
+// Telegram throws off a handful of transient errors on any large transfer, and each one
+// recovers on the next try. Announcing every one of them buries the progress bar; saying
+// nothing at all would hide a link that has genuinely started to struggle.
+test('the first retries pass without a word, the third is announced', async () => {
   const ws = await tempWorkspace(400)
   const client = fakeClient()
 
-  let alreadyFailed = false
+  let failures = 0
   const originalInvoke = client.invoke.bind(client)
   client.invoke = async (request) => {
-    if (!alreadyFailed && request.filePart === 0) {
-      alreadyFailed = true
+    if (failures < 3 && request.filePart === 0) {
+      failures += 1
       throw new Error('flaky network')
     }
     return await originalInvoke(request)
@@ -685,8 +688,48 @@ test('a short temporary error is announced too, with the attempt number', async 
   )
 
   const output = lines.join('')
-  assert.match(output, /Temporary error \(flaky network\), retry 1 in 1s/)
+  assert.doesNotMatch(output, /retry 1 /)
+  assert.doesNotMatch(output, /retry 2 /)
+  assert.match(output, /Temporary error \(flaky network\), retry 3 in 4s/)
   assert.doesNotMatch(output, /Telegram wants/)
+})
+
+// The one thing the quiet must not swallow. An attempt that takes a minute to fail leaves
+// the bar frozen for that minute, which is indistinguishable from a hang — the very failure
+// src/stall.js exists to end. Two of those before the third retry would be two silent
+// minutes, so a slow failure is announced the first time whatever its attempt number.
+test('an attempt that took a minute to fail is announced on the first retry', async () => {
+  const ws = await tempWorkspace(400)
+  const client = fakeClient()
+
+  let alreadyFailed = false
+  const originalInvoke = client.invoke.bind(client)
+  client.invoke = async (request) => {
+    if (!alreadyFailed && request.filePart === 0) {
+      alreadyFailed = true
+      throw new Error('Telegram stopped acknowledging part 1/4 of x')
+    }
+    return await originalInvoke(request)
+  }
+
+  const lines = []
+  // A clock that jumps a minute on every reading, so the attempt reads as a stall.
+  let ticks = 0
+
+  await runUpload(
+    ws.filePath,
+    { to: '@store', 'chunk-size': '400' },
+    {
+      ...deps(client),
+      configDir: ws.configDir,
+      partSize: 128,
+      silent: false,
+      writeErr: (line) => lines.push(line),
+      retryOptions: { sleep: async () => {}, now: () => (ticks += 60_000) },
+    },
+  )
+
+  assert.match(lines.join(''), /stopped acknowledging.*retry 1 /s)
 })
 
 test('silent prints nothing to stderr, even on a FLOOD_WAIT', async () => {

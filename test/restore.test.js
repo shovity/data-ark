@@ -347,7 +347,10 @@ test('every chunk download is handed retry options it can announce through', asy
   }
 })
 
-test('a short retry is announced with the error that caused it', async () => {
+// A 4.3GB restore throws off a handful of -503s that each recover on the next try. One line
+// per occurrence buries the progress bar, so the first two are swallowed and the third —
+// which has outlived two backoffs — is spoken.
+test('the first two retries are swallowed and the third is announced', async () => {
   const backup = fakeBackup()
   const { dir, configDir } = await tempConfig()
   const out = path.join(dir, 'out.tar')
@@ -360,14 +363,44 @@ test('a short retry is announced with the error that caused it', async () => {
     log: () => {},
     writeErr: (line) => written.push(line),
     downloadChunk: (c, message, handle, offset, onProgress, retryOptions) => {
-      retryOptions.onRetry(new Error('-503: Timeout (caused by upload.GetFile)'), 2, 4000)
+      const err = new Error('-503: Timeout (caused by upload.GetFile)')
+      retryOptions.onRetry(err, 1, 1000, 200)
+      retryOptions.onRetry(err, 2, 2000, 200)
+      retryOptions.onRetry(err, 3, 4000, 200)
       return base.downloadChunk(c, message, handle, offset, onProgress)
     },
   })
 
   const text = written.join('')
+  assert.doesNotMatch(text, /retry 1 /)
+  assert.doesNotMatch(text, /retry 2 /)
   assert.match(text, /Timeout/)
-  assert.match(text, /retry 2/)
+  assert.match(text, /retry 3 /)
+})
+
+// The exception the quiet must not swallow: an attempt that took a minute to fail already
+// left the bar frozen for a minute, which reads as the hang src/stall.js exists to end.
+test('an attempt that took a minute to fail is announced on the first retry', async () => {
+  const backup = fakeBackup()
+  const { dir, configDir } = await tempConfig()
+  const out = path.join(dir, 'out.tar')
+  const base = deps(fakeClient(backup), configDir)
+  const written = []
+
+  await runRestore(backup.id, { out }, {
+    ...base,
+    silent: false,
+    log: () => {},
+    writeErr: (line) => written.push(line),
+    downloadChunk: (c, message, handle, offset, onProgress, retryOptions) => {
+      retryOptions.onRetry(new Error('Telegram stopped sending slice 3/9'), 1, 1000, 60_000)
+      return base.downloadChunk(c, message, handle, offset, onProgress)
+    },
+  })
+
+  const text = written.join('')
+  assert.match(text, /stopped sending slice 3\/9/)
+  assert.match(text, /retry 1 /)
 })
 
 test('a wait longer than a minute says data-ark is waiting, not stuck', async () => {

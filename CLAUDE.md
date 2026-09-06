@@ -104,6 +104,13 @@ releasing — upload and restore a file large enough to need several chunks abov
   `SaveFilePart` / `InputFile`. Both branches need real-account coverage.
 - `FLOOD_WAIT` is honoured for exactly the seconds the server asks for, and any
   wait over a minute is announced so the user does not read it as a hang.
+- Retries are announced from the third one onward, not the first: a multi-gigabyte transfer
+  throws off a handful of `-503`s that each recover on the next try, and one line apiece
+  buries the progress bar. Two exceptions are announced immediately — a wait longer than a
+  minute (`FLOOD_WAIT`), and an attempt that itself took longer than a minute to fail, which
+  has already left the bar frozen for that minute and so reads exactly like the hang
+  `src/stall.js` exists to end. `withRetry` passes `onRetry` the failed attempt's own
+  duration so the commands can tell those apart.
 - A stalled request is not a failed one, and only the second is something `withRetry` can
   see. `src/stall.js` gives every network wait 60 seconds of silence before it counts as an
   error — one 512KB part slower than that means under 8KB/s, which could not finish a
