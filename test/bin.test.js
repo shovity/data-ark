@@ -53,6 +53,30 @@ test('uploading a nonexistent file gives a short error, not a stack trace', asyn
   assert.doesNotMatch(stderr, /at .*\.js:\d+/)
 })
 
+test('a second file on the command line is uploaded, not dropped', async () => {
+  // HOME is isolated so nothing here can reach the real ~/.telstore. The session is a
+  // stand-in that only has to get past the login check — the run stops at the missing path,
+  // well before anything would open a socket with it.
+  const home = await tempDir('upload-many-bin')
+  const present = path.join(home, 'present.tar')
+  const missing = path.join(home, 'missing.tar')
+  await fs.writeFile(present, 'x')
+  await fs.mkdir(path.join(home, '.telstore'), { recursive: true })
+  await fs.writeFile(
+    path.join(home, '.telstore', 'config.json'),
+    JSON.stringify({ session: 's', apiId: 1, apiHash: 'h' }),
+  )
+
+  const { stdout, stderr } = await run(process.execPath, [BIN, present, missing, '--to', 'me'], {
+    env: { ...process.env, HOME: home },
+  }).catch((err) => ({ stdout: err.stdout ?? '', stderr: err.stderr ?? '' }))
+
+  // Before the batch existed, everything after the first path was silently discarded and this
+  // run would have complained about the login instead.
+  assert.match(stderr, new RegExp(`File does not exist: ${missing}`))
+  assert.equal(stdout, '')
+})
+
 test(
   'SIGINT during login: exits 130 without claiming anything false about progress',
   { timeout: 10_000 },

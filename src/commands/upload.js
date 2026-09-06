@@ -9,6 +9,7 @@ import { chunkCaption, manifestCaption } from '../caption.js'
 import { describeChat } from '../chat.js'
 import { closeQuietly, connect as realConnect } from '../client.js'
 import { configFile, defaultConfigDir, loadConfig } from '../config.js'
+import { assertLoggedIn } from '../session.js'
 import { requireChat, resolveSettings } from '../settings.js'
 import {
   buildManifest,
@@ -61,6 +62,26 @@ async function realSendManifest(client, peer, { bytes, fileName, caption }) {
   })
 }
 
+// What telstore will read the bytes from. A batch checks every path through this before it
+// sends anything, so "File does not exist" reads the same whether it came from the one file
+// asked for or from the fourth of six — one definition, one wording.
+async function statSource(absPath) {
+  let stat
+
+  try {
+    stat = await fs.stat(absPath)
+  } catch (err) {
+    if (err.code === 'ENOENT') throw new Error(`File does not exist: ${absPath}`)
+    throw err
+  }
+
+  if (!stat.isFile()) {
+    throw new Error(`${absPath} is not a file.`)
+  }
+
+  return stat
+}
+
 export async function runUpload(filePath, options = {}, deps = {}) {
   const {
     connect = realConnect,
@@ -77,18 +98,7 @@ export async function runUpload(filePath, options = {}, deps = {}) {
   } = deps
 
   const absPath = path.resolve(filePath)
-
-  let stat
-  try {
-    stat = await fs.stat(absPath)
-  } catch (err) {
-    if (err.code === 'ENOENT') throw new Error(`File does not exist: ${absPath}`)
-    throw err
-  }
-
-  if (!stat.isFile()) {
-    throw new Error(`${absPath} is not a file.`)
-  }
+  const stat = await statSource(absPath)
 
   const config = await loadConfig(configDir)
   const { values: settings, source } = resolveSettings(options, config, {
@@ -324,4 +334,133 @@ export async function runUpload(filePath, options = {}, deps = {}) {
       warn(`\nWarning: could not close the Telegram connection: ${err.message}\n`),
     )
   }
+}
+
+// `telstore a b c` is three backups, not one: each file keeps its own id, its own manifest and
+// its own resumable record, so a batch is exactly what running the command three times would
+// have produced — minus two logins. The connection is the one thing worth sharing, and it is
+// shared through the same deps seam the tests drive, so runUpload stays the only caller of
+// connect and nothing here has to know what a client is.
+export async function runUploads(filePaths, options = {}, deps = {}) {
+  const paths = filePaths.map((filePath) => path.resolve(filePath))
+
+  // A single file is the common case and must read exactly as it did before this existed:
+  // no batch heading, no summary, and an error that reaches the caller rather than a report.
+  if (paths.length === 1) {
+    const { id, chunks } = await runUpload(paths[0], options, deps)
+    return { results: [{ path: paths[0], id, chunks }], failed: 0 }
+  }
+
+  const {
+    connect = realConnect,
+    disconnect = (client) => client.destroy(),
+    configDir = defaultConfigDir(),
+    writeErr = (line) => process.stderr.write(line),
+    log: writeLog = (line) => console.log(line),
+    silent = false,
+    onFileDone = () => {},
+  } = deps
+
+  // Everything that can be known before the first byte goes out is settled here. A typo in the
+  // fourth name must not surface an hour into the third file, and a destination nobody set is
+  // one problem, not one per file — the report at the end is for what only the transfer can
+  // discover.
+  const duplicate = paths.find((absPath, index) => paths.indexOf(absPath) !== index)
+
+  if (duplicate) {
+    throw new Error(
+      `${duplicate} is named twice. Uploading one file twice would make two backups of the ` +
+        'same bytes, each with its own id — name it once, or run telstore again afterwards if ' +
+        'a second copy is really what you want.',
+    )
+  }
+
+  const config = await loadConfig(configDir)
+
+  // The login is checked here rather than left to the first connect: reported from inside the
+  // loop it would arrive once per file, each one having already written a state record for a
+  // backup that never sent a byte.
+  assertLoggedIn(config)
+
+  const { values: settings } = resolveSettings(options, config, { file: configFile(configDir) })
+  requireChat(settings)
+
+  for (const absPath of paths) await statSource(absPath)
+
+  const log = silent ? () => {} : writeLog
+  const warn = silent ? () => {} : writeErr
+
+  let shared = null
+  const perFile = {
+    ...deps,
+    connect: async (theirConfig, connectOptions) =>
+      (shared ??= await connect(theirConfig, connectOptions)),
+    disconnect: async () => {},
+  }
+
+  const results = []
+
+  try {
+    for (const [index, absPath] of paths.entries()) {
+      if (index > 0) log('')
+      log(`[${index + 1}/${paths.length}] ${path.basename(absPath)}`)
+
+      let result
+      try {
+        const { id, chunks } = await runUpload(absPath, options, perFile)
+        result = { path: absPath, id, chunks }
+      } catch (err) {
+        // One file's trouble is that file's trouble. Stopping here would leave the files
+        // named after it untouched and unmentioned, which is the batch equivalent of the
+        // silent drop this command exists to end — so it is recorded and named in the
+        // summary, and the exit code carries it out to the shell.
+        //
+        // It is also said out loud here and now. Waiting for the summary would leave the bar
+        // of the next file scrolling for an hour over a failure nobody had been told about.
+        result = { path: absPath, error: err.message }
+        warn(`\n${path.basename(absPath)} failed: ${err.message}\n`)
+      }
+
+      results.push(result)
+      onFileDone(result)
+    }
+  } finally {
+    if (shared) {
+      await closeQuietly(shared, disconnect, (err) =>
+        warn(`\nWarning: could not close the Telegram connection: ${err.message}\n`),
+      )
+    }
+  }
+
+  const failed = results.filter((result) => result.error).length
+
+  log('')
+  for (const line of summaryLines(results, failed)) log(line)
+
+  return { results, failed }
+}
+
+// The one place a batch says how it went. Every file gets a line whether it worked or not:
+// a name missing from this list would be a file nobody could tell the fate of.
+function summaryLines(results, failed) {
+  const width = Math.max(...results.map((result) => path.basename(result.path).length))
+  const uploaded = results.length - failed
+  const lines = [`${results.length} files: ${uploaded} uploaded, ${failed} failed.`, '']
+
+  for (const result of results) {
+    const name = path.basename(result.path).padEnd(width)
+
+    if (result.error) {
+      lines.push(`  ${name}  failed: ${result.error}`)
+      continue
+    }
+
+    lines.push(`  ${name}  ${result.id}  (${result.chunks} chunk${result.chunks === 1 ? '' : 's'})`)
+  }
+
+  if (uploaded > 0) {
+    lines.push('', 'Restore with: npx telstore restore <backup-id>')
+  }
+
+  return lines
 }

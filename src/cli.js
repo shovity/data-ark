@@ -1,3 +1,4 @@
+import { basename } from 'node:path'
 import { parseArgs } from 'node:util'
 
 const SUBCOMMANDS = new Set([
@@ -30,7 +31,7 @@ export const HELP = `telstore — split large files into chunks and store them o
 
 Usage:
   npx telstore login                      Log in to Telegram, only needed once
-  npx telstore <file>                     Split a file and upload it to Telegram
+  npx telstore <file> [file...]           Split files and upload them to Telegram
   npx telstore list                       List the backups stored in the destination
   npx telstore restore <backup-id>        Download the chunks and reassemble the file
   npx telstore delete <backup-id>         Remove a backup's chunks and manifest from the chat
@@ -41,6 +42,9 @@ Usage:
 Running on a machine you do not trust:
   npx telstore token                      Print a session token for another machine
   npx telstore login --token              Log in there by pasting one, session stays sealed
+
+Several files in one run go one after another over a single connection, each becoming its own
+backup. Run telstore again with only the files that are left to carry on after an interruption.
 
 Settings:
   npx telstore config <name>              Print one setting's value
@@ -76,9 +80,26 @@ Options apply to one run and are never saved. Use config to change a setting for
 // finished chunk to a state file, restore has not. Naming the backup matters because the
 // id is what `status` lists and what a later `restore` needs — the chunks are already in
 // the chat under that id, whether or not this run ever finishes.
-export function interruptMessage(command, { backupId } = {}) {
+export function interruptMessage(command, { backupId, done = [] } = {}) {
   if (command === 'upload') {
     const backup = backupId ? `Backup ${backupId} is saved` : 'Progress is saved'
+
+    // A batch is where "run the same command again" turns into a lie: the files it already
+    // finished have had their records cleared, so repeating the whole line would upload them
+    // a second time under new ids. Name them, and ask for the ones that are left instead.
+    if (done.length > 0) {
+      const width = Math.max(...done.map((file) => basename(file.path).length))
+      const finished = done
+        .map((file) => `  ${basename(file.path).padEnd(width)}  ${file.id}`)
+        .join('\n')
+
+      return (
+        `\n${backup}. These are finished and need no second run:\n${finished}\n` +
+        'Run telstore again with only the files that are left — repeating the whole command ' +
+        'would upload the finished ones again as new backups. "npx telstore status" shows ' +
+        'what is unfinished.\n'
+      )
+    }
 
     return (
       `\n${backup} — run the same command again to continue, ` +
@@ -170,5 +191,7 @@ export function route(argv) {
     return { command: first, args: rest, options: values }
   }
 
-  return { command: 'upload', args: [first], options: values }
+  // Every positional, not just the first: `telstore a b c` used to upload `a` and drop the
+  // rest without a word, which is the one thing this project never does.
+  return { command: 'upload', args: positionals, options: values }
 }

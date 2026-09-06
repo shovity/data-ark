@@ -10,51 +10,7 @@ import { parseManifest } from '../src/manifest.js'
 import { saveConfig } from '../src/config.js'
 import { loadState, stateFile, stateKey, MAX_STATES } from '../src/state.js'
 
-import { tempDir } from './helpers.js'
-
-/**
- * Fake client that collects every part by fileId and, when sendFile is called,
- * "seals" the uploaded content into a message with an increasing id.
- */
-function fakeClient({ failOnChunk = null } = {}) {
-  const parts = new Map()
-  const messages = []
-  let nextId = 1000
-
-  return {
-    messages,
-    async invoke(request) {
-      const key = request.fileId.toString()
-      if (!parts.has(key)) parts.set(key, [])
-      parts.get(key).push({ index: request.filePart, bytes: Buffer.from(request.bytes) })
-      return true
-    },
-    async sendFile(peer, { file, caption, attributes }) {
-      const fileName = attributes?.[0]?.fileName ?? file.name
-      const chunkIndex = messages.filter((m) => !m.fileName.endsWith('.manifest.json')).length
-
-      if (failOnChunk !== null && chunkIndex === failOnChunk) {
-        throw new Error('connection dropped mid-transfer')
-      }
-
-      const collected = parts.get(file.id?.toString()) ?? []
-      const bytes = Buffer.concat(
-        [...collected].sort((a, b) => a.index - b.index).map((p) => p.bytes),
-      )
-
-      nextId += 1
-      const message = { id: nextId, peer, fileName, caption, bytes }
-      messages.push(message)
-      return message
-    },
-    async sendManifest(peer, { bytes, fileName, caption }) {
-      nextId += 1
-      const message = { id: nextId, peer, fileName, caption, bytes }
-      messages.push(message)
-      return message
-    },
-  }
-}
+import { fakeClient, tempDir, uploadDeps } from './helpers.js'
 
 async function tempWorkspace(fileSize) {
   const dir = await tempDir('upload-cmd')
@@ -64,15 +20,7 @@ async function tempWorkspace(fileSize) {
   return { dir, filePath, content, configDir: path.join(dir, 'config') }
 }
 
-function deps(client) {
-  return {
-    connect: async () => client,
-    sendChunk: async (c, peer, { inputFile, fileName, caption }) =>
-      c.sendFile(peer, { file: inputFile, caption, attributes: [{ fileName }] }),
-    sendManifest: async (c, peer, args) => c.sendManifest(peer, args),
-    disconnect: async () => {},
-  }
-}
+const deps = uploadDeps
 
 test('splits the file into the right number of chunks and uploads them all', async () => {
   const ws = await tempWorkspace(1000)

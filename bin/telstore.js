@@ -14,12 +14,18 @@ const SIGINT_EXIT_CODE = 130
 let currentCommand = null
 let currentBackupId = null
 
+// A batch clears each finished file's record as it goes, so by the time Ctrl-C lands these
+// are backups no second run should touch. Ctrl-C needs their names to say so.
+const finishedUploads = []
+
 process.on('SIGINT', () => {
   // A passphrase prompt has stdin in raw mode, and process.exit skips readline's own cleanup.
   // Without this, Ctrl-C hands back a shell that no longer echoes what is typed into it.
   if (process.stdin.isTTY) process.stdin.setRawMode(false)
 
-  process.stderr.write(interruptMessage(currentCommand, { backupId: currentBackupId }))
+  process.stderr.write(
+    interruptMessage(currentCommand, { backupId: currentBackupId, done: finishedUploads }),
+  )
   process.exit(SIGINT_EXIT_CODE)
 })
 
@@ -88,13 +94,20 @@ async function main() {
     }
 
     case 'upload': {
-      const { runUpload } = await import('../src/commands/upload.js')
+      const { runUploads } = await import('../src/commands/upload.js')
 
-      await runUpload(parsed.args[0], parsed.options, {
+      const { failed } = await runUploads(parsed.args, parsed.options, {
         onBackupId: (id) => {
           currentBackupId = id
         },
+        onFileDone: (file) => {
+          if (file.id) finishedUploads.push(file)
+        },
       })
+
+      // A batch reports its own failures by name and has already said so on stdout; the exit
+      // code is what carries that out to whatever ran telstore.
+      if (failed > 0) process.exitCode = 1
       return
     }
 

@@ -114,6 +114,18 @@ removed that the user did not ask for, nothing reported gone that is still there
 
 - `src/uploader.js` and `src/downloader.js` know byte ranges and Telegram's part APIs; they
   must not mention CLI flags like `--chunk-size` in their errors.
+- `runUploads` is what `telstore a b c` runs; `runUpload` is still one file and knows nothing
+  about batches. The batch shares one connection by wrapping the `connect`/`disconnect` deps
+  rather than opening a client itself, so `runUpload` stays the only caller of `connect`. One
+  file short-circuits straight to `runUpload` — same lines, same thrown error, no summary. What
+  can be known before the first byte goes out is settled up front (a duplicate name, a missing
+  path, no login, no destination): those refuse the whole batch, because a typo in the fourth
+  name surfacing an hour into the third file is the same silent waste as `route` dropping the
+  argument, which is what this replaced. What only the transfer can discover is per file — it is
+  named on stderr the moment it happens, again in the summary, and carried out as exit code 1.
+  Ctrl-C mid-batch is the one place the old wording turned into a lie: the finished files have
+  had their records cleared, so `interruptMessage` names them and asks for the files that are
+  left instead of "the same command again".
 - `src/downloader.js` fetches a chunk as 8MB slices through a pool of concurrent
   `iterDownload` streams — one stream is one request at a time, capping a restore at
   round-trip latency (~3 MB/s). Bytes land out of order, so the chunk's sha256 is taken by

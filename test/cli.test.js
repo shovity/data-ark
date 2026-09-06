@@ -15,6 +15,19 @@ test('a path with slashes is still an upload', () => {
   assert.deepEqual(r.args, ['./backups/data.tar'])
 })
 
+test('every file named after the first is kept, not dropped', () => {
+  const r = route(['a.tar', 'b.tar', 'c.tar'])
+  assert.equal(r.command, 'upload')
+  assert.deepEqual(r.args, ['a.tar', 'b.tar', 'c.tar'])
+})
+
+test('flags around several files are still parsed as flags', () => {
+  const r = route(['a.tar', '--to', '@store', 'b.tar'])
+  assert.equal(r.command, 'upload')
+  assert.deepEqual(r.args, ['a.tar', 'b.tar'])
+  assert.equal(r.options.to, '@store')
+})
+
 test('restore is recognised as a subcommand with a backup id', () => {
   const r = route(['restore', 'telstore-20260905-7f3a91'])
   assert.equal(r.command, 'restore')
@@ -151,6 +164,33 @@ test('interrupting an upload before it has an id still promises nothing false', 
 
   assert.match(message, /run the same command again/)
   assert.doesNotMatch(message, /undefined/)
+})
+
+test('interrupting a batch names the backups already finished', () => {
+  const message = interruptMessage('upload', {
+    backupId: 'telstore-20260905-7f3a91',
+    done: [
+      { path: '/backups/a.tar', id: 'telstore-20260905-aaaaaa' },
+      { path: '/backups/b.tar', id: 'telstore-20260905-bbbbbb' },
+    ],
+  })
+
+  assert.match(message, /telstore-20260905-7f3a91/)
+  assert.match(message, /a\.tar\s+telstore-20260905-aaaaaa/)
+  assert.match(message, /b\.tar\s+telstore-20260905-bbbbbb/)
+
+  // Running the whole command again would upload the finished files a second time, so the
+  // line that says to do exactly that must not survive into a batch.
+  assert.doesNotMatch(message, /run the same command again/)
+  assert.match(message, /files that are left/)
+  assert.match(message, /telstore status/)
+})
+
+test('a batch that has finished nothing yet reads exactly like a single upload', () => {
+  const one = interruptMessage('upload', { backupId: 'telstore-20260905-7f3a91' })
+  const batch = interruptMessage('upload', { backupId: 'telstore-20260905-7f3a91', done: [] })
+
+  assert.equal(batch, one)
 })
 
 test('interrupting a restore says the download is lost', () => {
