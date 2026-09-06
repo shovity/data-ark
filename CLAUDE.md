@@ -223,6 +223,17 @@ a real pty (`( sleep 1.5; echo secret ) | script -qec "node bin/telstore.js toke
 pacing the input like a human: lines that arrive before the prompt exists are echoed by the tty
 and then dropped, which looks exactly like a bug in the code and is not.
 
+The curtain is also what draws the mask, because a prompt that shows nothing at all reads as the
+hang this project refuses everywhere else. Every echo readline makes is a write arriving at the
+curtain, so the count comes from `rl.line` — the public property — and not from the string being
+swallowed; overriding `_writeToOutput` looks like the way to do this and is not, since Node's own
+internals have called a symbol-keyed method since well before 22 and the override would simply
+never run. The mask is one asterisk per character, capped to the line the question sits on with a
+trailing `…`, and the cap is load-bearing: the redraw is `\x1b[2K\r` and the whole line, which
+clears one line only, so a mask that wrapped would leave stale asterisks on the rows above. The
+pty check above now also confirms that asterisks appear as the line is typed, that they come back
+when a character is erased, and that the secret itself never does.
+
 When you touch code that hands an object to GramJS, assert against GramJS's own
 helper (as `test/downloader.test.js` does with `getFileInfo`) rather than against
 the fake, and exercise both threshold branches against a real account before

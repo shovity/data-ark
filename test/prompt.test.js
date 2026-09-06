@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { PassThrough } from 'node:stream'
 
-import { readSecret } from '../src/prompt.js'
+import { maskLine, readSecret } from '../src/prompt.js'
 
 // readline in terminal mode drives the input the way it drives a real terminal, so the fake
 // has to answer the same two questions a terminal does.
@@ -71,4 +71,47 @@ test('readSecret asks on stderr, so a redirected stdout still shows the question
   }
 
   assert.match(written.join(''), /Passphrase: /)
+})
+
+// The mask has to fit the line the question is on. askSecret redraws the whole line on every
+// keystroke, and that redraw clears one line only — a mask allowed to wrap would leave stale
+// asterisks on the rows above it.
+test('maskLine shows one asterisk per character while it fits', () => {
+  assert.equal(maskLine('Passphrase: ', 7, 80), 'Passphrase: *******')
+})
+
+test('maskLine stops at the end of the line and says it stopped', () => {
+  const line = maskLine('Passphrase: ', 200, 20)
+
+  assert.equal(line, 'Passphrase: *******…')
+  assert.equal(line.length, 20)
+})
+
+test('maskLine assumes 80 columns when the terminal does not say', () => {
+  assert.equal(maskLine('', 80, undefined), `${'*'.repeat(79)}…`)
+})
+
+// A question wider than the terminal leaves no room, and a mask of nothing is the hang this
+// change exists to end. One column is kept for it whatever the arithmetic says.
+test('maskLine keeps a column of mask even when the question fills the line', () => {
+  assert.equal(maskLine('Passphrase: ', 5, 4), 'Passphrase: *…')
+})
+
+test('readSecret echoes one asterisk per character typed', async () => {
+  const seen = capture()
+
+  await readSecret('Passphrase: ', { input: fakeTerminal('hunter2\n'), output: seen.output })
+
+  assert.match(seen.text(), /Passphrase: \*{7}/)
+  assert.doesNotMatch(seen.text(), /hunter2/)
+  assert.doesNotMatch(seen.text(), /\*{8}/)
+})
+
+test('readSecret takes an asterisk back when a character is erased', async () => {
+  const seen = capture()
+
+  assert.equal(await readSecret('Passphrase: ', { input: fakeTerminal('abc\x7f\n'), output: seen.output }), 'ab')
+  // What the screen is left holding, once every redraw has been drawn over the last one.
+  assert.ok(seen.text().endsWith('Passphrase: **\n'), seen.text())
+  assert.doesNotMatch(seen.text(), /abc/)
 })

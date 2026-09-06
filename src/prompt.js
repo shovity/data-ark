@@ -3,27 +3,45 @@ import { stdin, stdout, stderr } from 'node:process'
 import { Writable } from 'node:stream'
 
 // readline echoes what it reads through its own output, so putting a curtain in front of that
-// output is what makes typing invisible.
+// output is what makes typing invisible. The curtain is also where the mask is drawn from:
+// every echo readline makes is a write arriving here, and a write arriving here is the one
+// signal that something was typed which does not involve reading readline's internals.
 function veiledOutput(output) {
-  let hidden = false
+  let onEcho = null
 
   return {
-    hide: () => {
-      hidden = true
+    hide: (draw) => {
+      onEcho = draw
     },
     show: () => {
-      hidden = false
+      onEcho = null
     },
     // The question goes straight to the real output, past the curtain, so it stays on screen
     // while the answer to it does not.
     say: (text) => output.write(text),
     stream: new Writable({
       write(chunk, encoding, callback) {
-        if (!hidden) output.write(chunk, encoding)
+        if (onEcho) onEcho(String(chunk))
+        else output.write(chunk, encoding)
         callback()
       },
     }),
   }
+}
+
+// What the line reads while a secret is being typed. The mask is capped to the line the question
+// sits on: askSecret redraws the whole line on every keystroke, and that redraw clears one line
+// only, so a mask allowed to wrap would leave stale asterisks on the rows above it. The trailing
+// ellipsis says the counting stopped, not the typing.
+export function maskLine(question, length, columns) {
+  // One column is kept back for the ellipsis, and one for the mask itself however narrow the
+  // terminal is: a question that fills the line would otherwise mask to nothing, which is the
+  // silence this whole thing exists to end.
+  const budget = Math.max(1, (columns || 80) - question.length - 1)
+
+  if (length <= budget) return question + '*'.repeat(length)
+
+  return `${question}${'*'.repeat(budget)}\u2026`
 }
 
 const NO_TERMINAL =
@@ -51,7 +69,27 @@ export function createPrompts({ input = stdin, output = stdout } = {}) {
       if (!input.isTTY) throw new Error(NO_TERMINAL)
 
       veil.say(question)
-      veil.hide()
+      // The question is already on screen and carries no asterisks yet, so the first echo has
+      // nothing to add. rl.line is what the mask counts — readline's own idea of the line,
+      // after it has applied the keystroke, whether that was a character, a paste, a backspace
+      // or a Ctrl-U.
+      let drawn = question
+
+      veil.hide((echo) => {
+        // Readline announces the finished line by writing a newline, and by then it has already
+        // emptied rl.line: redrawing on that would wipe the mask off the screen at the very
+        // moment the answer was accepted.
+        if (echo.includes('\n')) return
+
+        const line = maskLine(question, rl.line.length, output.columns)
+
+        // One keystroke can cost readline four writes — a redraw per write would be the same
+        // line four times and a cursor that flickers for nothing.
+        if (line === drawn) return
+
+        drawn = line
+        veil.say(`\x1b[2K\r${line}`)
+      })
 
       try {
         return await rl.question('')
