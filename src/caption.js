@@ -8,7 +8,7 @@ const DIVIDER = '━'.repeat(15)
 
 // The hashtag is what `list` searches for, and it lives on the manifest alone: chunk
 // captions stay out of that search so a twelve-chunk backup is one hit, not thirteen.
-export const MANIFEST_TAG = '#dataark'
+export const MANIFEST_TAG = '#telark'
 
 // A file name may legally contain a newline or a tab, and either one would push the
 // rest of the card down a row and take its shape apart.
@@ -32,7 +32,7 @@ export function manifestCaption({ id, name, size, chunks, createdAt }) {
     `🆔 ${id}`,
     `📅 ${utcMinutes(createdAt)}`,
     '',
-    `↩ npx data-ark restore ${id}`,
+    `↩ npx telark restore ${id}`,
     MANIFEST_TAG,
   ].join('\n')
 }

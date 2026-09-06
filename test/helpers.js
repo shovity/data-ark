@@ -7,7 +7,7 @@ import path from 'node:path'
 export const LOGGED_IN = { session: 's', apiId: 1, apiHash: 'h' }
 
 export async function tempDir(prefix) {
-  return await fs.mkdtemp(path.join(os.tmpdir(), `data-ark-${prefix}-`))
+  return await fs.mkdtemp(path.join(os.tmpdir(), `telark-${prefix}-`))
 }
 
 // Commands narrate through an injected log, so a test reads what the user would have seen.

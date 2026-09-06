@@ -1,6 +1,6 @@
 {
-  "name": "data-ark",
-  "version": "0.1.5",
+  "name": "telark",
+  "version": "0.1.0",
   "description": "Split large files into chunks and store them on Telegram",
   "keywords": [
     "telegram",
@@ -11,19 +11,19 @@
     "cli",
     "mtproto"
   ],
-  "homepage": "https://github.com/shovity/data-ark#readme",
+  "homepage": "https://github.com/shovity/telark#readme",
   "bugs": {
-    "url": "https://github.com/shovity/data-ark/issues"
+    "url": "https://github.com/shovity/telark/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/shovity/data-ark.git"
+    "url": "git+https://github.com/shovity/telark.git"
   },
   "type": "module",
   "license": "MIT",
   "author": "shovity",
   "bin": {
-    "data-ark": "bin/data-ark.js"
+    "telark": "bin/telark.js"
   },
   "files": [
     "bin",

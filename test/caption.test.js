@@ -4,20 +4,20 @@ import assert from 'node:assert/strict'
 import { chunkCaption, manifestCaption, parseManifestCaption } from '../src/caption.js'
 
 test('a chunk caption names the backup and its position in the set', () => {
-  assert.equal(chunkCaption({ id: 'ark-20260905-7f3a91', number: 3, total: 12 }), '📦 ark-20260905-7f3a91 · 3/12')
+  assert.equal(chunkCaption({ id: 'telark-20260905-7f3a91', number: 3, total: 12 }), '📦 telark-20260905-7f3a91 · 3/12')
 })
 
-// restore finds the manifest with `search: backupId`, so every caption data-ark
+// restore finds the manifest with `search: backupId`, so every caption telark
 // writes has to keep the id searchable as one whole word.
 test('a chunk caption keeps the backup id searchable', () => {
-  const caption = chunkCaption({ id: 'ark-20260905-7f3a91', number: 1, total: 1 })
+  const caption = chunkCaption({ id: 'telark-20260905-7f3a91', number: 1, total: 1 })
 
-  assert.match(caption, /(^|\s)ark-20260905-7f3a91(\s|$)/)
+  assert.match(caption, /(^|\s)telark-20260905-7f3a91(\s|$)/)
 })
 
 test('a manifest caption is a summary card of the whole backup', () => {
   const caption = manifestCaption({
-    id: 'ark-20260905-7f3a91',
+    id: 'telark-20260905-7f3a91',
     name: 'data.tar',
     size: 22_998_546_842,
     chunks: 12,
@@ -30,18 +30,18 @@ test('a manifest caption is a summary card of the whole backup', () => {
       '🗄 data.tar',
       '━━━━━━━━━━━━━━━',
       '💾 21.4 GB · 12 chunks',
-      '🆔 ark-20260905-7f3a91',
+      '🆔 telark-20260905-7f3a91',
       '📅 2026-09-05 16:40 UTC',
       '',
-      '↩ npx data-ark restore ark-20260905-7f3a91',
-      '#dataark',
+      '↩ npx telark restore telark-20260905-7f3a91',
+      '#telark',
     ].join('\n'),
   )
 })
 
 test('a manifest caption counts a single chunk in the singular', () => {
   const caption = manifestCaption({
-    id: 'ark-20260901-9de447',
+    id: 'telark-20260901-9de447',
     name: 'photos.zip',
     size: 1024,
     chunks: 1,
@@ -55,7 +55,7 @@ test('a manifest caption counts a single chunk in the singular', () => {
 // would push every following line one row down and break the card apart.
 test('a manifest caption flattens line breaks in the file name', () => {
   const caption = manifestCaption({
-    id: 'ark-20260905-7f3a91',
+    id: 'telark-20260905-7f3a91',
     name: 'two\nlines.tar',
     size: 1024,
     chunks: 1,
@@ -68,7 +68,7 @@ test('a manifest caption flattens line breaks in the file name', () => {
 
 test('a manifest caption parses back into the fields it was built from', () => {
   const built = manifestCaption({
-    id: 'ark-20260905-7f3a91',
+    id: 'telark-20260905-7f3a91',
     name: 'data.tar',
     size: 22_998_546_842,
     chunks: 12,
@@ -76,7 +76,7 @@ test('a manifest caption parses back into the fields it was built from', () => {
   })
 
   assert.deepEqual(parseManifestCaption(built), {
-    id: 'ark-20260905-7f3a91',
+    id: 'telark-20260905-7f3a91',
     name: 'data.tar',
     size: '21.4 GB',
     chunks: 12,
@@ -84,10 +84,10 @@ test('a manifest caption parses back into the fields it was built from', () => {
   })
 })
 
-// Backups uploaded by earlier versions carry "#dataark <id> manifest" and nothing else.
+// Backups uploaded by earlier versions carry "#telark <id> manifest" and nothing else.
 // list still has to show them, so parsing has to say "I don't know" rather than guess.
 test('a caption from an older release parses as unknown', () => {
-  assert.equal(parseManifestCaption('#dataark ark-20260905-7f3a91 manifest'), null)
+  assert.equal(parseManifestCaption('#telark telark-20260905-7f3a91 manifest'), null)
 })
 
 test('an unrelated message parses as unknown', () => {
@@ -95,5 +95,5 @@ test('an unrelated message parses as unknown', () => {
 })
 
 test('a card someone edited down to nothing parses as unknown', () => {
-  assert.equal(parseManifestCaption('🗄 data.tar\n#dataark'), null)
+  assert.equal(parseManifestCaption('🗄 data.tar\n#telark'), null)
 })

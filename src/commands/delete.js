@@ -56,7 +56,7 @@ function stateMessageIds(record) {
         throw new Error(
           `The record of unfinished backup ${record.state.id} gives ` +
             `${JSON.stringify(msgId)} as the message id of chunk ${Number(index) + 1}, which ` +
-            `is not a message id. ${record.file} is damaged, so data-ark is not deleting ` +
+            `is not a message id. ${record.file} is damaged, so telark is not deleting ` +
             'anything.',
         )
       }
@@ -106,7 +106,7 @@ export async function runDelete(backupId, options = {}, deps = {}) {
   if (records.length > 1) {
     throw new Error(
       `Two local records both claim to be backup ${backupId}: ` +
-        `${records.map((r) => r.file).join(' and ')}. data-ark will not guess which one to ` +
+        `${records.map((r) => r.file).join(' and ')}. telark will not guess which one to ` +
         'drop — remove the wrong one by hand and run again.',
     )
   }
@@ -120,7 +120,7 @@ export async function runDelete(backupId, options = {}, deps = {}) {
     if (!manifestMessage && !record) {
       throw new Error(
         `No backup ${backupId} found in ${chatName(chat)}, and no unfinished record of it on ` +
-          'this machine. Check the id with "npx data-ark list", or use --to to point at the ' +
+          'this machine. Check the id with "npx telark list", or use --to to point at the ' +
           'right chat.',
       )
     }
@@ -131,7 +131,7 @@ export async function runDelete(backupId, options = {}, deps = {}) {
     if (manifestMessage) {
       manifest = parseManifestJson(await readMessageBytes(client, manifestMessage))
 
-      // The manifest was found by the file name data-ark itself wrote, and that name is the
+      // The manifest was found by the file name telark itself wrote, and that name is the
       // id this command was asked about. A body naming a different backup is a file that was
       // renamed or replaced, and its message ids point at somebody else's chunks — the one
       // mistake in this whole command that nothing can undo.
@@ -139,7 +139,7 @@ export async function runDelete(backupId, options = {}, deps = {}) {
         throw new Error(
           `The manifest named ${manifestFileName(backupId)} describes backup ` +
             `${JSON.stringify(manifest.id)}, not ${backupId}. Its message ids point at ` +
-            'another backup\'s chunks, so data-ark is not deleting anything.',
+            'another backup\'s chunks, so telark is not deleting anything.',
         )
       }
 

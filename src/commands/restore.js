@@ -78,7 +78,7 @@ export async function runRestore(backupId, options = {}, deps = {}) {
     if (delayMs > LONG_WAIT_MS) {
       warn(
         `\nTelegram wants ${formatDuration(delayMs / 1000)} of waiting before the next part ` +
-          `(${err.message}). data-ark is waiting and will carry on by itself, leave it running.\n`,
+          `(${err.message}). telark is waiting and will carry on by itself, leave it running.\n`,
       )
       return
     }
@@ -112,7 +112,7 @@ export async function runRestore(backupId, options = {}, deps = {}) {
     const partial = `${target}.partial`
 
     // Only ENOENT means "no file yet". Treating a permission or I/O error as absence
-    // would have data-ark overwrite the user's file without asking.
+    // would have telark overwrite the user's file without asking.
     let exists = true
     try {
       await fs.stat(target)

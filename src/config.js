@@ -5,7 +5,7 @@ import path from 'node:path'
 const FILE_NAME = 'config.json'
 
 export function defaultConfigDir() {
-  return path.join(os.homedir(), '.data-ark')
+  return path.join(os.homedir(), '.telark')
 }
 
 export function configFile(dir = defaultConfigDir()) {
@@ -19,7 +19,7 @@ function isPlainObject(value) {
 // `config.json` is hand-editable now that the `config` command invites people into it,
 // which puts it in the same category as a manifest or a state file: believed only after it
 // has been checked. A `settings` that is not an object would make every lookup below it
-// return undefined, and data-ark would then run happily on built-in defaults while the
+// return undefined, and telark would then run happily on built-in defaults while the
 // user's own choices sat there ignored — so it is named and refused instead.
 export function checkConfigShape(raw, file) {
   if (!isPlainObject(raw)) {
@@ -32,7 +32,7 @@ export function checkConfigShape(raw, file) {
   if (raw.settings !== undefined && !isPlainObject(raw.settings)) {
     throw new Error(
       `"settings" in ${file} holds ${Array.isArray(raw.settings) ? 'a list' : typeof raw.settings}, ` +
-        'not a group of settings. data-ark will not guess what was meant — fix that entry, ' +
+        'not a group of settings. telark will not guess what was meant — fix that entry, ' +
         'or remove it to fall back to the defaults.',
     )
   }
@@ -57,7 +57,7 @@ export async function loadConfig(dir = defaultConfigDir()) {
   } catch (err) {
     throw new Error(
       `Corrupt config file: ${file} is not valid JSON (${err.message}). ` +
-        'Fix the syntax to keep your session, or delete the file and run "data-ark login" again.',
+        'Fix the syntax to keep your session, or delete the file and run "telark login" again.',
     )
   }
 

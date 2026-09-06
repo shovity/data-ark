@@ -12,7 +12,7 @@ const GAP = '  '
 function unknownKey(name) {
   if (isManagedByLogin(name)) {
     return new Error(
-      `"${name}" is managed by "npx data-ark login", not by config. ` +
+      `"${name}" is managed by "npx telark login", not by config. ` +
         `Settings you can change: ${SETTING_KEYS.join(', ')}.`,
     )
   }
@@ -37,7 +37,7 @@ function listLines(values, source, stored) {
     return [key, `${spec.format(value)}${note}`, source(key) === 'settings' ? '' : '(default)']
   })
 
-  // Keys data-ark does not know are left in the file untouched, but a value that silently
+  // Keys telark does not know are left in the file untouched, but a value that silently
   // does nothing is worse than one that is refused: show them, so a typo is visible from
   // the command rather than only from opening the file that also holds the session.
   const strays = Object.keys(stored).filter((key) => !SETTING_KEYS.includes(key))
@@ -50,8 +50,8 @@ function listLines(values, source, stored) {
   if (strays.length > 0) {
     lines.push('')
     lines.push(
-      `Ignored, data-ark does not know these: ${strays.join(', ')}. ` +
-        'Remove one with: npx data-ark config <name> --unset',
+      `Ignored, telark does not know these: ${strays.join(', ')}. ` +
+        'Remove one with: npx telark config <name> --unset',
     )
   }
 
@@ -65,21 +65,21 @@ export async function runConfig(args = [], options = {}, deps = {}) {
   if (extra.length > 0) {
     throw new Error(
       `Too many arguments: a setting takes one value, but got ${args.length}. ` +
-        `Did you mean: npx data-ark config ${name} "${[value, ...extra].join(' ')}"`,
+        `Did you mean: npx telark config ${name} "${[value, ...extra].join(' ')}"`,
     )
   }
 
   // Both of these would otherwise be obeyed halfway and reported as a success: a listing
   // that quietly dropped the --unset, or an unset that quietly dropped the value beside it.
   if (options.unset && name === undefined) {
-    throw new Error('--unset needs the setting to drop. Try: npx data-ark config chat --unset')
+    throw new Error('--unset needs the setting to drop. Try: npx telark config chat --unset')
   }
 
   if (options.unset && value !== undefined) {
     throw new Error(
       `--unset takes no value, but "${value}" was given. ` +
-        `Use "npx data-ark config ${name} --unset" to drop it, ` +
-        `or "npx data-ark config ${name} ${value}" to set it.`,
+        `Use "npx telark config ${name} --unset" to drop it, ` +
+        `or "npx telark config ${name} ${value}" to set it.`,
     )
   }
 

@@ -56,7 +56,7 @@ function fakeClient({ failOnChunk = null } = {}) {
 }
 
 async function tempWorkspace(fileSize) {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'data-ark-upload-cmd-'))
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'telark-upload-cmd-'))
   const filePath = path.join(dir, 'data.tar')
   const content = randomBytes(fileSize)
   await fs.writeFile(filePath, content)
@@ -84,7 +84,7 @@ test('splits the file into the right number of chunks and uploads them all', asy
   )
 
   assert.equal(result.chunks, 3)
-  assert.match(result.id, /^ark-\d{8}-[0-9a-f]{6}$/)
+  assert.match(result.id, /^telark-\d{8}-[0-9a-f]{6}$/)
 
   const chunkMessages = client.messages.filter((m) => !m.fileName.endsWith('.manifest.json'))
   assert.equal(chunkMessages.length, 3)
@@ -136,7 +136,7 @@ test('only the manifest carries the search tag', async () => {
     { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
   )
 
-  const tagged = client.messages.filter((m) => m.caption.includes('#dataark'))
+  const tagged = client.messages.filter((m) => m.caption.includes('#telark'))
 
   assert.equal(tagged.length, 1)
   assert.equal(tagged[0].fileName.endsWith('.manifest.json'), true)
@@ -619,7 +619,7 @@ test('starting a new backup drops the oldest states past the limit and says whic
   for (let i = 0; i < MAX_STATES; i += 1) {
     const file = path.join(stateDirPath, `stale${i}.json`)
     const stale = {
-      id: `ark-stale-${i}`,
+      id: `telark-stale-${i}`,
       chat: '@store',
       path: `/home/ai/old-${i}.tar`,
       size: 1000,
@@ -647,7 +647,7 @@ test('starting a new backup drops the oldest states past the limit and says whic
   const left = await fs.readdir(stateDirPath)
   assert.equal(left.length, MAX_STATES - 1, 'the new backup takes the last slot')
   assert.ok(!left.includes('stale0.json'), 'the oldest state is the one dropped')
-  assert.match(warnings.join(''), /ark-stale-0/)
+  assert.match(warnings.join(''), /telark-stale-0/)
 })
 
 test('a file changed during the upload sends no manifest and gives a clear error', async () => {
@@ -658,7 +658,7 @@ test('a file changed during the upload sends no manifest and gives a clear error
   const key = stateKey(path.resolve(ws.filePath), stat.size, stat.mtimeMs)
 
   // After the first chunk another process overwrites the file — exactly the case of a
-  // VM image or database dump still being written while data-ark reads it.
+  // VM image or database dump still being written while telark reads it.
   let alreadyChanged = false
   const changeFileAfterFirstChunk = {
     ...deps(client),
@@ -1039,7 +1039,7 @@ test('a state file with an unusable chunk size names the file rather than the fl
   await fs.writeFile(
     file,
     JSON.stringify({
-      id: 'ark-20260101-aaaaaa',
+      id: 'telark-20260101-aaaaaa',
       chat: '@store',
       path: path.resolve(ws.filePath),
       size: stat.size,

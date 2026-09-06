@@ -1,4 +1,4 @@
-# data-ark
+# telark
 
 A CLI that splits large files into chunks, uploads them to Telegram over MTProto,
 and restores them byte-for-byte.
@@ -86,14 +86,14 @@ leave the only way out through the Telegram app. What `delete` needs instead is 
 that is not a whole positive number refuses the *whole* manifest rather than deleting the ids
 around it, because a message id is the name of something about to be destroyed for good, and
 that is the one number nobody may guess at. A manifest whose body names a different backup is
-refused for the same reason — a file renamed in the chat would otherwise have data-ark destroy
+refused for the same reason — a file renamed in the chat would otherwise have telark destroy
 another backup's chunks while reporting this one.
 
 `src/client.js` batches the ids itself rather than handing all of them to GramJS at once.
 GramJS's `deleteMessages` splits them into hundreds and fires every batch through
 `Promise.all`, which would put a hundred requests in flight with none of them under
 `withRetry` or the stall deadline. Its peer resolution and its choice between
-`channels.DeleteMessages` and `messages.DeleteMessages` are still what data-ark calls, because
+`channels.DeleteMessages` and `messages.DeleteMessages` are still what telark calls, because
 that choice is exactly what a fake client would never catch us getting wrong.
 
 That refusal keys off the *source* of the size, not its presence. A `chunkSize` in the config
@@ -101,11 +101,11 @@ file says what to use when nobody asks for anything, so a resumed backup quietly
 size; only `--chunk-size` on the command line is somebody asking, and only that is refused.
 `resolveSettings` returns a `source(key)` for exactly this, and it throws on a key it does not
 know rather than returning `undefined` — a typo there would turn the refusal into a silent
-resume at the wrong size. `~/.data-ark/config.json` is hand-editable now that `config` invites
+resume at the wrong size. `~/.telark/config.json` is hand-editable now that `config` invites
 people into it, so it belongs with the manifests and state files above: a stored value is
 parsed through the same function as the flag, and a `settings` that is not an object is named
 rather than stepped over, because every lookup below it would otherwise return `undefined` and
-data-ark would run on defaults while the user's own choices sat there ignored.
+telark would run on defaults while the user's own choices sat there ignored.
 
 ## Module boundaries
 
@@ -125,7 +125,7 @@ be served from the page cache.
 
 `src/confirm.js` holds the y/N prompt `restore` and `delete` both ask through, and
 `findManifestMessage` lives in `src/client.js` rather than in either command, because two
-copies of "how data-ark finds a manifest" is how the two of them start disagreeing about
+copies of "how telark finds a manifest" is how the two of them start disagreeing about
 which file is the manifest.
 
 `--yes` and `--out` are the two flags with no setting behind them, and for the same kind of
@@ -141,7 +141,7 @@ built-in default; **flags never write**, and the `config` command is the only th
 
 The boundary rule extends to whose fault an error is. A value that will not parse is reported
 against where it came from — `Invalid --concurrency: "0"` for a flag, `Invalid concurrency in
-~/.data-ark/config.json: "0"` for a stored one — because naming a flag nobody typed sends the
+~/.telark/config.json: "0"` for a stored one — because naming a flag nobody typed sends the
 reader after the wrong thing. The same reasoning killed the old resume message: *"run again
 without `--to`"* is no help to someone whose destination came from the config, so it names the
 chat to pass instead, which is right whatever the source. `runStatus` is the exception that
@@ -150,7 +150,7 @@ cannot parse is printed in its own row rather than thrown, leaving the account l
 unfinished backups readable.
 
 `src/caption.js` also owns the shape of what the chat shows. Captions are plain text:
-no parse mode, so no file name ever has to be escaped. The `#dataark` tag lives on the
+no parse mode, so no file name ever has to be escaped. The `#telark` tag lives on the
 manifest alone — `list` searches for it, and a chunk carrying it would turn one backup
 into thirteen hits.
 

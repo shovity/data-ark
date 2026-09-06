@@ -9,7 +9,7 @@ import { formatBytes } from './progress.js'
 
 export const DEFAULT_LIMIT = 20
 
-// The three keys data-ark writes for itself. Naming them separately is what lets the
+// The three keys telark writes for itself. Naming them separately is what lets the
 // unknown-key error say "managed by login" instead of listing a session as something the
 // user forgot to spell correctly.
 const MANAGED_BY_LOGIN = new Set(['session', 'apiId', 'apiHash'])
@@ -181,7 +181,7 @@ export function resolveSettings(options = {}, config = {}, { file = 'the config 
 export function requireChat(values) {
   if (values.chat === null || values.chat === undefined) {
     throw new Error(
-      'No destination set — run "npx data-ark config chat @my_backups" to set one ' +
+      'No destination set — run "npx telark config chat @my_backups" to set one ' +
         '("config chat me" for Saved Messages), or pass --to to choose one for this run.',
     )
   }

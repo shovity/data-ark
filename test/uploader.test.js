@@ -60,7 +60,7 @@ function reassemble(requests) {
 }
 
 async function tempFile(content) {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'data-ark-upload-'))
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'telark-upload-'))
   const file = path.join(dir, 'source.bin')
   await fs.writeFile(file, content)
   const handle = await fs.open(file, 'r')
@@ -75,7 +75,7 @@ test('uploads a whole file smaller than one part', async () => {
   const result = await uploadRange(client, handle.fd, {
     offset: 0,
     length: content.length,
-    fileName: 'ark-1.part0001',
+    fileName: 'telark-1.part0001',
     partSize: 512,
   })
 
@@ -184,7 +184,7 @@ test('a range of 10MB or less uses SaveFilePart and returns an InputFile', async
   const result = await uploadRange(client, handle.fd, {
     offset: 0,
     length: content.length,
-    fileName: 'ark-1.part0001',
+    fileName: 'telark-1.part0001',
     partSize: 512,
   })
 
@@ -199,7 +199,7 @@ test('a range of 10MB or less uses SaveFilePart and returns an InputFile', async
 
   assert.ok(result.inputFile instanceof Api.InputFile)
   assert.ok(!(result.inputFile instanceof Api.InputFileBig))
-  assert.equal(result.inputFile.name, 'ark-1.part0001')
+  assert.equal(result.inputFile.name, 'telark-1.part0001')
   assert.equal(result.inputFile.parts, 2)
   assert.equal(result.inputFile.md5Checksum, '')
   await handle.close()
@@ -213,7 +213,7 @@ test('exactly 10MB is still on the small side of the threshold', async () => {
   const result = await uploadRange(client, handle.fd, {
     offset: 0,
     length: content.length,
-    fileName: 'ark-1.part0001',
+    fileName: 'telark-1.part0001',
   })
 
   assert.ok(result.inputFile instanceof Api.InputFile)
@@ -229,7 +229,7 @@ test('a range above 10MB uses SaveBigFilePart and returns an InputFileBig', asyn
   const result = await uploadRange(client, handle.fd, {
     offset: 0,
     length: content.length,
-    fileName: 'ark-1.part0001',
+    fileName: 'telark-1.part0001',
   })
 
   assert.ok(
@@ -242,7 +242,7 @@ test('a range above 10MB uses SaveBigFilePart and returns an InputFileBig', asyn
   )
 
   assert.ok(result.inputFile instanceof Api.InputFileBig)
-  assert.equal(result.inputFile.name, 'ark-1.part0001')
+  assert.equal(result.inputFile.name, 'telark-1.part0001')
   assert.equal(result.sha256, createHash('sha256').update(content).digest('hex'))
   await handle.close()
 })

@@ -120,11 +120,11 @@ export async function listStates(configDir = defaultConfigDir()) {
 // delete needs the file a record came from, not just its contents — and the name of that
 // file is a hash of the path, size and mtime *inside* the record, so recomputing it would
 // be trusting an untrusted file to say where it lives. A hand-edited path yields a key that
-// names no file at all, clearState ignores a file that is not there, and data-ark reports a
+// names no file at all, clearState ignores a file that is not there, and telark reports a
 // record dropped that is still sitting on disk. Matching the id inside each file is the one
 // way that cannot point at the wrong one.
 //
-// Every record claiming the id is returned rather than the first: two of them means data-ark
+// Every record claiming the id is returned rather than the first: two of them means telark
 // cannot know which to drop, and that is the caller's decision to refuse, not ours to make
 // by picking one.
 export async function findStates(backupId, configDir = defaultConfigDir()) {

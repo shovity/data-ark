@@ -13,11 +13,11 @@ import {
 } from '../src/config.js'
 
 async function tempDir() {
-  return await fs.mkdtemp(path.join(os.tmpdir(), 'data-ark-config-'))
+  return await fs.mkdtemp(path.join(os.tmpdir(), 'telark-config-'))
 }
 
-test('defaultConfigDir points at ~/.data-ark', () => {
-  assert.equal(defaultConfigDir(), path.join(os.homedir(), '.data-ark'))
+test('defaultConfigDir points at ~/.telark', () => {
+  assert.equal(defaultConfigDir(), path.join(os.homedir(), '.telark'))
 })
 
 test('loadConfig returns an empty object when there is no file yet', async () => {
@@ -82,14 +82,14 @@ test('a config with a settings group is handed back as it is', () => {
   })
 })
 
-test('settings data-ark does not know are left exactly where they were found', () => {
+test('settings telark does not know are left exactly where they were found', () => {
   assert.deepEqual(checkConfigShape({ settings: { chat: 'me', future: 1 } }, 'f.json'), {
     settings: { chat: 'me', future: 1 },
   })
 })
 
 // `config.settings?.chat` on a number is undefined, so a settings key holding the wrong
-// kind of value would have data-ark run cheerfully on built-in defaults while the user's
+// kind of value would have telark run cheerfully on built-in defaults while the user's
 // own choices sat in the file being ignored. Name it instead.
 test('a settings key that is not a group of settings is named, not stepped over', async () => {
   const dir = await tempDir()
@@ -110,7 +110,7 @@ test('a config file holding a list rather than an object is refused', async () =
 })
 
 // The old advice for a syntax error was "delete it and run login again", written when
-// nothing but data-ark touched this file. `config` invites people to edit it by hand, and a
+// nothing but telark touched this file. `config` invites people to edit it by hand, and a
 // stray comma is not a reason to throw someone's session away.
 test('a syntax error asks for the syntax to be fixed before it offers to delete the session', async () => {
   const dir = await tempDir()

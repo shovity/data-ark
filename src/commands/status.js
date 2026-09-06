@@ -78,7 +78,7 @@ export async function runStatus(options = {}, deps = {}) {
       'Destination',
       settingsError ??
         (settings.chat === null
-          ? 'none set — run "npx data-ark config chat @my_backups" to set one'
+          ? 'none set — run "npx telark config chat @my_backups" to set one'
           : describeChat(settings.chat)),
     ),
   )

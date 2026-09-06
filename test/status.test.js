@@ -53,7 +53,7 @@ test('an expired session is reported, not thrown', async () => {
   await runStatus({}, {
     configDir,
     log: out.log,
-    connect: async () => { throw new Error('Session expired — run "npx data-ark login".') },
+    connect: async () => { throw new Error('Session expired — run "npx telark login".') },
     disconnect: async () => {},
   })
 
@@ -64,7 +64,7 @@ test('status lists each unfinished backup with how far it got', async () => {
   const configDir = await tempDir('status')
   await saveConfig({ ...LOGGED_IN, settings: { chat: '@my_backups' } }, configDir)
   await saveState('aaa', {
-    id: 'ark-20260905-02e053',
+    id: 'telark-20260905-02e053',
     chat: '@my_backups',
     path: '/home/ai/data.tar',
     size: 100,
@@ -82,7 +82,7 @@ test('status lists each unfinished backup with how far it got', async () => {
   })
 
   const text = out.text()
-  assert.match(text, /ark-20260905-02e053/)
+  assert.match(text, /telark-20260905-02e053/)
   assert.match(text, /data\.tar/)
   // 100 bytes in 40-byte chunks is three chunks, two of them already sent.
   assert.match(text, /2\/3/)
@@ -162,7 +162,7 @@ test('the destination is shown as a link that can be clicked', async () => {
   const configDir = await tempDir('status')
   await saveConfig({ ...LOGGED_IN, settings: { chat: '-5107543795' } }, configDir)
   await saveState('aaa', {
-    id: 'ark-1',
+    id: 'telark-1',
     chat: '@my_backups',
     path: '/home/ai/data.tar',
     size: 100,

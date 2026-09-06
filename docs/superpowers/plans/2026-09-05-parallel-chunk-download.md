@@ -770,7 +770,7 @@ test('a mid-document slice offset is one GramJS itself accepts', async () => {
     mimeType: 'application/octet-stream',
     size: bigInt(content.length),
     dcId: 2,
-    attributes: [new Api.DocumentAttributeFilename({ fileName: 'ark.part0001' })],
+    attributes: [new Api.DocumentAttributeFilename({ fileName: 'telark.part0001' })],
   })
 
   const iter = iterDownload(

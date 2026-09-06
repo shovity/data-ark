@@ -1,4 +1,4 @@
-// How data-ark talks about a destination. None of this touches Telegram — it is string
+// How telark talks about a destination. None of this touches Telegram — it is string
 // handling around a target the user typed — so it lives apart from the client that does.
 
 export function normalizeChatTarget(input) {
@@ -17,7 +17,7 @@ export function normalizeChatTarget(input) {
 
 // Telegram's web client addresses a chat by putting the raw target in the fragment, which
 // covers both a negative channel id and an @username. Saved Messages is the exception: it
-// is reached by the account's own id, which data-ark does not know, so it gets no link
+// is reached by the account's own id, which telark does not know, so it gets no link
 // rather than a guessed one that lands somewhere else.
 export function chatUrl(chat) {
   const text = String(chat)

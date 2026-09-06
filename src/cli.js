@@ -23,22 +23,22 @@ const OPTIONS = {
   help: { type: 'boolean', short: 'h' },
 }
 
-export const HELP = `data-ark — split large files into chunks and store them on Telegram
+export const HELP = `telark — split large files into chunks and store them on Telegram
 
 Usage:
-  npx data-ark login                        Log in to Telegram, only needed once
-  npx data-ark <file>                       Split a file and upload it to Telegram
-  npx data-ark list                         List the backups stored in the destination
-  npx data-ark restore <backup-id>          Download the chunks and reassemble the file
-  npx data-ark delete <backup-id>           Remove a backup's chunks and manifest from the chat
-  npx data-ark status                       Show the account, the destination and unfinished backups
-  npx data-ark config                       Show every setting and where its value comes from
-  npx data-ark logout                       Remove the saved session
+  npx telark login                        Log in to Telegram, only needed once
+  npx telark <file>                       Split a file and upload it to Telegram
+  npx telark list                         List the backups stored in the destination
+  npx telark restore <backup-id>          Download the chunks and reassemble the file
+  npx telark delete <backup-id>           Remove a backup's chunks and manifest from the chat
+  npx telark status                       Show the account, the destination and unfinished backups
+  npx telark config                       Show every setting and where its value comes from
+  npx telark logout                       Remove the saved session
 
 Settings:
-  npx data-ark config <name>                Print one setting's value
-  npx data-ark config <name> <value>        Change it for good
-  npx data-ark config <name> --unset        Drop it and fall back to the default
+  npx telark config <name>                Print one setting's value
+  npx telark config <name> <value>        Change it for good
+  npx telark config <name> --unset        Drop it and fall back to the default
 
   chat          Where backups go: @username, -100123..., or me. No default.
   chunkSize     Size of each chunk, default 1800MB. Examples: 1.8GB, 500MB.
@@ -69,7 +69,7 @@ export function interruptMessage(command, { backupId } = {}) {
 
     return (
       `\n${backup} — run the same command again to continue, ` +
-      'or "npx data-ark status" to see what is left.\n'
+      'or "npx telark status" to see what is left.\n'
     )
   }
 
@@ -138,13 +138,13 @@ export function route(argv) {
 
   const [first, ...rest] = positionals
 
-  // `data-ark --to @chan` with no file used to mean "remember this destination". Flags no
+  // `telark --to @chan` with no file used to mean "remember this destination". Flags no
   // longer write anything, so that line now asks for a run that has nothing to upload —
   // say where the destination actually lives instead of printing help at someone who was
   // perfectly clear about what they wanted.
   if (first === undefined && values.to && !values.help) {
     throw new Error(
-      `Nothing to upload. To change the destination for good, run "npx data-ark config chat ${values.to}". ` +
+      `Nothing to upload. To change the destination for good, run "npx telark config chat ${values.to}". ` +
         'To use it for one run, pass --to alongside a file or a command.',
     )
   }

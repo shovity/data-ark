@@ -19,7 +19,7 @@ test('a promise that never settles becomes an error', async () => {
 })
 
 // setTimeout stores its delay in a 32-bit signed integer. Anything larger overflows, and
-// Node's answer is to fire after 1ms — so the knob meant to make data-ark more patient made
+// Node's answer is to fire after 1ms — so the knob meant to make telark more patient made
 // every single request fail instantly instead. Refuse the value rather than invert it.
 test('a deadline too large for a timer is refused, not silently turned into one tick', async () => {
   await assert.rejects(

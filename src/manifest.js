@@ -8,7 +8,7 @@ export function newBackupId(now = new Date(), randomHex = () => randomBytes(3).t
   const yyyy = now.getUTCFullYear()
   const mm = String(now.getUTCMonth() + 1).padStart(2, '0')
   const dd = String(now.getUTCDate()).padStart(2, '0')
-  return `ark-${yyyy}${mm}${dd}-${randomHex()}`
+  return `telark-${yyyy}${mm}${dd}-${randomHex()}`
 }
 
 export function chunkFileName(id, i) {
@@ -72,7 +72,7 @@ export function manifestMessageIds(manifest) {
       throw new Error(
         `Manifest gives ${JSON.stringify(msgId)} as the message id of chunk ${index + 1}, ` +
           'which is not a message id. Deleting from this manifest could remove the wrong ' +
-          'messages, so data-ark is not deleting anything.',
+          'messages, so telark is not deleting anything.',
       )
     }
 
@@ -85,7 +85,7 @@ export function parseManifest(input) {
 
   if (manifest.v !== MANIFEST_VERSION) {
     throw new Error(
-      `Manifest uses version ${manifest.v}, this build of data-ark only understands version ${MANIFEST_VERSION}.`,
+      `Manifest uses version ${manifest.v}, this build of telark only understands version ${MANIFEST_VERSION}.`,
     )
   }
 
@@ -147,7 +147,7 @@ export function parseManifest(input) {
   // uniform: every chunk is chunkSize, except the last one which is the remainder.
   // A correct total with individually wrong sizes yields a file with a hole or
   // extra length while every per-chunk sha256 still matches — silently wrong data,
-  // precisely what data-ark must never produce.
+  // precisely what telark must never produce.
   manifest.chunks.forEach((chunk, index) => {
     const expected = Math.min(manifest.chunkSize, manifest.size - index * manifest.chunkSize)
     if (chunk.size !== expected) {
