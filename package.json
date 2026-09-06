@@ -1,6 +1,6 @@
 {
   "name": "telstore",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Split large files into chunks and store them on Telegram",
   "keywords": [
     "telegram",
