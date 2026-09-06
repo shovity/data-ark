@@ -51,6 +51,12 @@ must not be relaxed to make a test pass.
   value is parsed through the same function as the flag, and a `settings` that is not an
   object is named rather than stepped over — otherwise telstore runs on defaults while
   the user's own choices sit there ignored.
+- A `note` is absent from the manifest rather than null when nobody wrote one, so a manifest
+  without one is the same file telstore wrote before the flag existed and `MANIFEST_VERSION`
+  stays 1 — bumping it would make an older telstore refuse a backup it can restore perfectly.
+  `parseManifest` still refuses a `note` that is not text: nothing restores differently because
+  of it, but a manifest is a file a person can edit and send back, and a field holding
+  something other than what it claims to be is where telstore stops rather than guesses.
 - The local record is the only pointer to chunks in the chat, so `runUpload` refuses a
   `--chunk-size` that differs from the unfinished backup's own rather than starting over,
   and `pruneStates` (keeps `MAX_STATES` most recent) names on stderr every id it drops,
@@ -134,6 +140,21 @@ removed that the user did not ask for, nothing reported gone that is still there
   Hidden files are skipped as every shell skips them, subfolders are **named on stderr** rather
   than silently missing from the list, and a folder or pattern that yields nothing is an error —
   "0 files uploaded" is the silence this project does not do.
+- A note is parsed before the first byte, in `runUpload` and again in the batch pre-flight: it
+  is written into the manifest, which goes out last, so one Telegram would refuse has to stop
+  the run at the start rather than after an hour of chunks whose only list can no longer be
+  sent — and one bad note is one mistake, not one failed row per file. `--note` is also the one
+  flag that invites a shell mistake telstore cannot undo: unquoted, every word after the first
+  arrives as another file to upload, so `statSource` says exactly that — under **two**
+  conditions, neither sufficient alone. The note must still be one word (one that kept its
+  spaces is one the shell was told to keep whole, so this cannot have happened to it), and a
+  file must have been named *after* the flag, which is where an unquoted note's tail lands.
+  Either test alone talks over a real typo: `--note march not-found.tar` fails the first,
+  `--note "ghi chu" not-found.tar` the second. Position is something only `route` can see, so
+  it reports `filesAfterNote` and `bin/telstore.js` hands it to `runUploads` through `deps` —
+  a wire every other test would stay green with cut, which is why `test/bin.test.js` runs the
+  real binary against an unquoted note. What survives both tests is `--note march` written
+  *before* the files, and that is the order nobody types.
 - More than one file is listed with its sizes and confirmed before the first byte goes out, and
   `--yes` is what a script passes instead. Without a terminal the batch **refuses** rather than
   reading an empty line as "no": a pipe has no answer to give, and "Cancelled on request" would
@@ -172,10 +193,11 @@ removed that the user did not ask for, nothing reported gone that is still there
   printing. Precedence is flag, stored setting, built-in default; **flags never write**, and
   `config` is the only thing that does. Two definitions of a default is how `config` starts
   lying about what will actually happen.
-- Three flags have no setting behind them, none of them a preference: `--out` names where one
+- Four flags have no setting behind them, none of them a preference: `--out` names where one
   restore goes (and is refused outright against several ids), `--yes` answers a question about
   one particular run (stored, it would be standing permission never to ask before destroying
-  a backup), and `--token` takes **no value** —
+  a backup), `--note` says what one upload is about (stored, it would label every backup for
+  months with a sentence nobody remembers writing), and `--token` takes **no value** —
   a token on the command line sits in `ps` and in shell history, so it is pasted at a prompt
   that does not echo. `login` refuses a positional argument rather than ignoring one.
 - The `--chunk-size` refusal keys off the *source* of the size, not its presence: a config
@@ -197,7 +219,14 @@ removed that the user did not ask for, nothing reported gone that is still there
   its own row rather than thrown, leaving the account line and unfinished backups readable.
 - `src/caption.js` owns what the chat shows. Captions are plain text — no parse mode, so no
   file name is ever escaped. `#telstore` lives on the manifest alone: `list` searches for it,
-  and a chunk carrying it would turn one backup into thirteen hits.
+  and a chunk carrying it would turn one backup into thirteen hits. `--note` rides on the
+  manifest for the same reason. `parseNote` folds it onto one line once, so the manifest body
+  and the card in the chat can never hold two different notes, and refuses one past
+  `MAX_NOTE_LENGTH` rather than cutting it short. The note is the one marker
+  `parseManifestCaption` may find missing without calling the card unreadable — every backup
+  made before the flag existed has a complete card and no note — and `list` gives it a column
+  only when some backup has one, cut to 40 characters there because the whole note is in the
+  manifest and on the card for anyone reading it properly.
 - Commands take collaborators through a `deps` object so tests can pass fakes; keep that seam
   rather than importing the real client directly.
 

@@ -310,3 +310,26 @@ test('token refuses a config that is not logged in without loading teleproto', a
 
   assert.equal(await teleprotoScriptsLoadedBy(['token'], { HOME: home }), 0)
 })
+
+// The advice about an unquoted note depends on where the words sat on the command line, which
+// only route can see and only the binary passes on. Every other test drives runUpload
+// directly and would stay green with that wire cut, so this one runs the real thing.
+test('an unquoted note is named as the reason a file is missing', async () => {
+  const home = await tempDir('note-split-bin')
+  const present = path.join(home, 'present.tar')
+  await fs.writeFile(present, 'x')
+  await fs.mkdir(path.join(home, '.telstore'), { recursive: true })
+  await fs.writeFile(
+    path.join(home, '.telstore', 'config.json'),
+    JSON.stringify({ session: 's', apiId: 1, apiHash: 'h' }),
+  )
+
+  const { stderr } = await run(
+    process.execPath,
+    [BIN, present, '--to', 'me', '--note', 'ghi', 'chu'],
+    { env: { ...process.env, HOME: home } },
+  ).catch((err) => ({ stderr: err.stderr ?? '' }))
+
+  assert.match(stderr, /File does not exist/)
+  assert.match(stderr, /--note "ghi"/)
+})

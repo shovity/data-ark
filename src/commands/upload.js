@@ -5,7 +5,7 @@ import { Api } from 'teleproto'
 import { CustomFile } from 'teleproto/client/uploads.js'
 
 import { PART_SIZE, planChunks } from '../chunking.js'
-import { chunkCaption, manifestCaption } from '../caption.js'
+import { chunkCaption, manifestCaption, parseNote } from '../caption.js'
 import { describeChat } from '../chat.js'
 import { closeQuietly, connect as realConnect } from '../client.js'
 import { askConfirm } from '../confirm.js'
@@ -64,16 +64,39 @@ async function realSendManifest(client, peer, { bytes, fileName, caption }) {
   })
 }
 
+// `--note quarterly accounts` is two arguments by the time node sees it: the note is
+// "quarterly", and "accounts" is a file telstore has been asked to upload. Nothing here can
+// put them back together — the shell dropped the quotes before the process started — so the
+// one useful thing left is to name the mistake this probably was.
+//
+// Two things have to be true before it is said, and neither is enough alone. The note must
+// still be one word — one that kept its spaces is one the shell was told to keep whole, so
+// this cannot have happened to it — and a file must have been named *after* the flag, which
+// is where an unquoted note's remaining words land. Without both, the file name is simply
+// wrong, and sending someone off after a quoting bug that is not there costs them the typo
+// waiting at the front of the same sentence.
+function splitNoteHint(note, filesAfterNote) {
+  if (!note || !filesAfterNote || /\s/.test(note)) return ''
+
+  return (
+    ` This run also carries --note ${JSON.stringify(note)}: a note with spaces in it has to be ` +
+    'quoted, or the shell hands every word after the first to telstore as another file. ' +
+    'Write it as --note "the whole note".'
+  )
+}
+
 // What telstore will read the bytes from. A batch checks every path through this before it
 // sends anything, so "File does not exist" reads the same whether it came from the one file
 // asked for or from the fourth of six — one definition, one wording.
-async function statSource(absPath) {
+async function statSource(absPath, { note = null, filesAfterNote = false } = {}) {
   let stat
 
   try {
     stat = await fs.stat(absPath)
   } catch (err) {
-    if (err.code === 'ENOENT') throw new Error(`File does not exist: ${absPath}`)
+    if (err.code === 'ENOENT') {
+      throw new Error(`File does not exist: ${absPath}.${splitNoteHint(note, filesAfterNote)}`)
+    }
     throw err
   }
 
@@ -97,10 +120,20 @@ export async function runUpload(filePath, options = {}, deps = {}) {
     log: writeLog = (line) => console.log(line),
     silent = false,
     onBackupId = () => {},
+    // Where on the command line the note sat, as `route` saw it. Nothing else can know, and
+    // a run that never says leaves the advice unsaid rather than guessed at.
+    filesAfterNote = false,
   } = deps
 
   const absPath = path.resolve(filePath)
-  const stat = await statSource(absPath)
+
+  // Before the file is even looked at: the note is the only thing this command sends that a
+  // person typed by hand, and it is written into the manifest, which goes out last. A note
+  // Telegram would refuse has to stop the run here, not after an hour of chunks whose only
+  // list can no longer be sent.
+  const note = parseNote(options.note)
+
+  const stat = await statSource(absPath, { note, filesAfterNote })
 
   const config = await loadConfig(configDir)
   const { values: settings, source } = resolveSettings(options, config, {
@@ -311,6 +344,7 @@ export async function runUpload(filePath, options = {}, deps = {}) {
       name: path.basename(absPath),
       size: stat.size,
       chunkSize,
+      note,
       chunks: chunks.map((chunk) => ({ i: chunk.i, ...state.done[String(chunk.i)] })),
     })
 
@@ -323,6 +357,7 @@ export async function runUpload(filePath, options = {}, deps = {}) {
         size: manifest.size,
         chunks: manifest.chunks.length,
         createdAt: manifest.createdAt,
+        note: manifest.note ?? null,
       }),
     })
 
@@ -354,10 +389,16 @@ export async function runUploads(filePaths, options = {}, deps = {}) {
     onFileDone = () => {},
     confirm = askConfirm,
     interactive = () => Boolean(process.stdin.isTTY),
+    filesAfterNote = false,
   } = deps
 
   const log = silent ? () => {} : writeLog
   const warn = silent ? () => {} : writeErr
+
+  // One note covers the whole run, so a note telstore cannot send is one mistake, not one per
+  // file. Left to runUpload it would be caught per file and swallowed into the summary as a
+  // failed row, after the files ahead of it had already gone out labelled with nothing.
+  const note = parseNote(options.note)
 
   // What was typed and what will be sent are two different lists once a folder or a pattern is
   // allowed: resolve them here, before anything else has an opinion about them.
@@ -415,7 +456,7 @@ export async function runUploads(filePaths, options = {}, deps = {}) {
 
   const sizes = []
 
-  for (const absPath of paths) sizes.push((await statSource(absPath)).size)
+  for (const absPath of paths) sizes.push((await statSource(absPath, { note, filesAfterNote })).size)
 
   // The last thing before the first byte. A folder or a pattern hands telstore a list nobody
   // has read yet, and even a hand-typed one is worth seeing added up: this is the moment where

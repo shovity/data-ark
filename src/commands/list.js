@@ -18,7 +18,17 @@ const COLUMNS = [
   { header: 'SIZE', key: 'size', right: true },
   { header: 'CHUNKS', key: 'chunks', right: true },
   { header: 'CREATED', key: 'created' },
+  { header: 'NOTE', key: 'note' },
 ]
+
+// The table is read at a glance, and the note is the one field with no shape at all — 500
+// characters of it would push every column off the side. The whole note is still in the
+// manifest and on the card in the chat, which is where anyone reading it properly will look.
+const NOTE_WIDTH = 40
+
+function shorten(note) {
+  return note.length > NOTE_WIDTH ? `${note.slice(0, NOTE_WIDTH - 1)}…` : note
+}
 
 // Telegram indexes the tag the manifest caption carries, so one search returns one hit
 // per backup instead of one per chunk. What comes back is still whatever the server
@@ -44,7 +54,14 @@ function toRow(message) {
   const card = parseManifestCaption(message.caption)
 
   if (!card) {
-    return { id, name: UNKNOWN, size: UNKNOWN, chunks: UNKNOWN, created: utcDay(message.date) }
+    return {
+      id,
+      name: UNKNOWN,
+      size: UNKNOWN,
+      chunks: UNKNOWN,
+      created: utcDay(message.date),
+      note: UNKNOWN,
+    }
   }
 
   return {
@@ -53,23 +70,30 @@ function toRow(message) {
     size: card.size,
     chunks: String(card.chunks),
     created: card.createdAt.slice(0, 10),
+    note: card.note ? shorten(card.note) : UNKNOWN,
   }
 }
 
 function renderTable(rows) {
-  const widths = COLUMNS.map((column) =>
+  // Most people never write a note, and a column of dashes tells them nothing they did not
+  // already know while costing every other column the width it takes.
+  const columns = COLUMNS.filter(
+    (column) => column.key !== 'note' || rows.some((row) => row.note !== UNKNOWN),
+  )
+
+  const widths = columns.map((column) =>
     Math.max(column.header.length, ...rows.map((row) => row[column.key].length)),
   )
 
   const line = (cells) =>
     cells
-      .map((cell, i) => (COLUMNS[i].right ? cell.padStart(widths[i]) : cell.padEnd(widths[i])))
+      .map((cell, i) => (columns[i].right ? cell.padStart(widths[i]) : cell.padEnd(widths[i])))
       .join(GAP)
       .trimEnd()
 
   return [
-    line(COLUMNS.map((column) => column.header)),
-    ...rows.map((row) => line(COLUMNS.map((column) => row[column.key]))),
+    line(columns.map((column) => column.header)),
+    ...rows.map((row) => line(columns.map((column) => row[column.key]))),
   ]
 }
 

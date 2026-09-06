@@ -498,3 +498,71 @@ test('with no terminal to ask in, the batch stops and names the flag that goes o
 
   assert.equal(client.messages.length, 0)
 })
+
+// The note is written once and meant for the whole run: `telstore *.tar --note "march"` is
+// somebody labelling an evening's work, not the first file of it.
+test('a note is stamped on every backup in the batch', async () => {
+  const ws = await tempWorkspace([1000, 500])
+  const client = fakeClient()
+
+  await runUploads(
+    ws.paths,
+    { to: '@store', 'chunk-size': '400', yes: true, note: 'march archive' },
+    { ...uploadDeps(client), configDir: ws.configDir, partSize: 128, silent: true },
+  )
+
+  const manifests = client.messages.filter((m) => m.fileName.endsWith('.manifest.json'))
+
+  assert.equal(manifests.length, 2)
+  for (const manifest of manifests) {
+    assert.equal(JSON.parse(manifest.bytes).note, 'march archive')
+  }
+})
+
+// One note, one mistake: refusing it per file would report the same problem twice and only
+// after the first upload had already finished under a note nobody can now match.
+test('a note too long to caption refuses the whole batch', async () => {
+  const ws = await tempWorkspace([1000, 500])
+  const client = fakeClient()
+
+  await assert.rejects(
+    () =>
+      runUploads(
+        ws.paths,
+        { to: '@store', 'chunk-size': '400', yes: true, note: 'x'.repeat(501) },
+        { ...uploadDeps(client), configDir: ws.configDir, partSize: 128, silent: true },
+      ),
+    /--note is 501 characters/,
+  )
+
+  assert.equal(client.messages.length, 0)
+})
+
+// The likeliest way a batch gets an extra file is an unquoted note, so the pre-flight refusal
+// has to carry the same advice the single-file one does.
+test('a missing file in a batch alongside a note names the quoting mistake', async () => {
+  const ws = await tempWorkspace([1000, 500])
+  const client = fakeClient()
+
+  await assert.rejects(
+    () =>
+      runUploads(
+        [...ws.paths, path.join(ws.dir, 'accounts')],
+        { to: '@store', 'chunk-size': '400', yes: true, note: 'quarterly' },
+        {
+          ...uploadDeps(client),
+          configDir: ws.configDir,
+          partSize: 128,
+          silent: true,
+          filesAfterNote: true,
+        },
+      ),
+    (err) => {
+      assert.match(err.message, /does not exist/)
+      assert.match(err.message, /--note "/)
+      return true
+    },
+  )
+
+  assert.equal(client.messages.length, 0)
+})

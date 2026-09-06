@@ -19,6 +19,7 @@ const OPTIONS = {
   'upload-concurrency': { type: 'string' },
   'download-concurrency': { type: 'string' },
   out: { type: 'string' },
+  note: { type: 'string' },
   limit: { type: 'string' },
   verbose: { type: 'boolean' },
   unset: { type: 'boolean' },
@@ -72,6 +73,12 @@ Options apply to one run and are never saved. Use config to change a setting for
   --download-concurrency <n>  8MB slices in parallel while restoring, this run only.
   --out <path>                Where to write the restored file. Defaults to the basename in
                               the manifest, and works with one backup id only.
+  --note <text>               A note to store with the upload. It goes into the manifest and
+                              onto the manifest message, where Telegram's own search can find
+                              it, and every file of a batch gets the same one. A note with
+                              spaces in it has to be quoted — --note "march archive" — or the
+                              shell hands the words after the first to telstore as more files
+                              to upload.
   --limit <n>                 How many backups list shows this run.
   --token                     Log in by pasting a session token. It takes no value on
                               purpose: a token written on the command line would sit in
@@ -169,14 +176,31 @@ function protectNegativeChatIds(argv) {
   return safe
 }
 
+// An unquoted note is gone by the time node starts: the shell hands `--note ghi chu` over as
+// three arguments and nothing can put the quotes back. The one trace it leaves is its own
+// tail — every word after the first sits here as a positional, after the flag — and upload
+// needs that to tell the mistake from a plain missing file. The shape of the command line is
+// already this file's business, so the observation is made here rather than guessed at later.
+//
+// The last --note is the one parseArgs kept, so it is the one whose position counts.
+function filesNamedAfterNote(tokens) {
+  const note = tokens.findLast((token) => token.kind === 'option' && token.name === 'note')
+
+  if (!note) return false
+
+  return tokens.some((token) => token.kind === 'positional' && token.index > note.index)
+}
+
 export function route(argv) {
-  const { values, positionals } = parseArgs({
+  const { values, positionals, tokens } = parseArgs({
     args: protectNegativeChatIds(argv),
     options: OPTIONS,
     allowPositionals: true,
+    tokens: true,
   })
 
   const [first, ...rest] = positionals
+  const filesAfterNote = filesNamedAfterNote(tokens)
 
   // `telstore --to @chan` with no file used to mean "remember this destination". Flags no
   // longer write anything, so that line now asks for a run that has nothing to upload —
@@ -190,14 +214,14 @@ export function route(argv) {
   }
 
   if (values.help || first === undefined || first === 'help') {
-    return { command: 'help', args: [], options: values }
+    return { command: 'help', args: [], options: values, filesAfterNote }
   }
 
   if (SUBCOMMANDS.has(first)) {
-    return { command: first, args: rest, options: values }
+    return { command: first, args: rest, options: values, filesAfterNote }
   }
 
   // Every positional, not just the first: `telstore a b c` used to upload `a` and drop the
   // rest without a word, which is the one thing this project never does.
-  return { command: 'upload', args: positionals, options: values }
+  return { command: 'upload', args: positionals, options: values, filesAfterNote }
 }

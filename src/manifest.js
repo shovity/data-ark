@@ -19,7 +19,15 @@ export function manifestFileName(id) {
   return `${id}.manifest.json`
 }
 
-export function buildManifest({ id, name, size, chunkSize, chunks, createdAt = new Date().toISOString() }) {
+export function buildManifest({
+  id,
+  name,
+  size,
+  chunkSize,
+  chunks,
+  createdAt = new Date().toISOString(),
+  note = null,
+}) {
   return {
     v: MANIFEST_VERSION,
     id,
@@ -27,6 +35,9 @@ export function buildManifest({ id, name, size, chunkSize, chunks, createdAt = n
     size,
     chunkSize,
     createdAt,
+    // Absent rather than null when there is none: a manifest without a note has to be the
+    // same file telstore wrote before the flag existed, down to the bytes.
+    ...(note ? { note } : {}),
     chunks: [...chunks]
       .sort((a, b) => a.i - b.i)
       .map(({ i, msgId, size: chunkBytes, sha256 }) => ({ i, msgId, size: chunkBytes, sha256 })),
@@ -102,6 +113,15 @@ export function parseManifest(input) {
     throw new Error(
       `Manifest records a file size of ${JSON.stringify(manifest.size)}, ` +
         'which is not a whole number of bytes.',
+    )
+  }
+
+  // The note is decoration — nothing restores differently because of it — but a manifest is
+  // a file a person can edit and send back, and a field holding something other than what it
+  // claims to be is the point where telstore stops reading rather than guesses.
+  if (manifest.note !== undefined && typeof manifest.note !== 'string') {
+    throw new Error(
+      `Manifest records a note of ${JSON.stringify(manifest.note)}, which is not text.`,
     )
   }
 

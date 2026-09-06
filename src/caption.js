@@ -14,6 +14,37 @@ function oneLine(name) {
   return String(name).replace(/\s+/g, ' ').trim()
 }
 
+// Telegram takes 1024 characters in a caption, and the card around the note already spends
+// some of them — a file name alone may be 255. 500 leaves both room to spare.
+export const MAX_NOTE_LENGTH = 500
+
+// A note is written at a shell prompt and read in two places: the manifest body and the card
+// in the chat. Folding it here, once, is what keeps those two from holding slightly different
+// notes and leaving nobody able to say which one was typed.
+export function parseNote(raw) {
+  if (raw === undefined || raw === null) return null
+
+  const note = oneLine(raw)
+
+  if (note === '') {
+    throw new Error(
+      '--note is empty. Write the note itself, or leave the flag off — a backup with a blank ' +
+        'note is one telstore had something to say about and did not.',
+    )
+  }
+
+  if (note.length > MAX_NOTE_LENGTH) {
+    throw new Error(
+      `--note is ${note.length} characters, and a caption has only room for ${MAX_NOTE_LENGTH} ` +
+        'once the rest of the card has had its share. Shorten it: telstore will not cut it ' +
+        'short by itself, because half a note read as a whole one is exactly the kind of ' +
+        'plausible wrong answer this tool exists to refuse.',
+    )
+  }
+
+  return note
+}
+
 function utcMinutes(createdAt) {
   return `${new Date(createdAt).toISOString().slice(0, 16).replace('T', ' ')} UTC`
 }
@@ -22,12 +53,15 @@ export function chunkCaption({ id, number, total }) {
   return `📦 ${id} · ${number}/${total}`
 }
 
-export function manifestCaption({ id, name, size, chunks, createdAt }) {
+export function manifestCaption({ id, name, size, chunks, createdAt, note = null }) {
   return [
     `📄 ${oneLine(name)}`,
     `💾 ${formatBytes(size)} · ${chunks} chunk${chunks === 1 ? '' : 's'}`,
     `🆔 ${id}`,
     `📅 ${utcMinutes(createdAt)}`,
+    // Below the facts telstore knows, above the line that says how to get the file back:
+    // the note is the one part of the card a person wrote, so it reads last of the four.
+    ...(note ? [`📝 ${oneLine(note)}`] : []),
     '',
     `↩ npx telstore restore ${id}`,
     MANIFEST_TAG,
@@ -50,11 +84,15 @@ export function parseManifestCaption(text) {
   const id = marker(lines, '🆔')
   const createdAt = marker(lines, '📅')
 
+  // Every card telstore wrote before --note existed is a complete card, so the note is the
+  // one marker whose absence means "there is no note" rather than "this is not a card".
+  const note = marker(lines, '📝')
+
   if (!name || !totals || !id || !createdAt) return null
 
   const match = /^(.+) · (\d+) chunks?$/.exec(totals)
 
   if (!match) return null
 
-  return { id, name, size: match[1], chunks: Number(match[2]), createdAt }
+  return { id, name, size: match[1], chunks: Number(match[2]), createdAt, note }
 }

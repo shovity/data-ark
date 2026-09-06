@@ -247,3 +247,27 @@ test('manifestMessageIds refuses an id that is not a message id', () => {
 test('manifestMessageIds refuses a chunk entry that is not an object', () => {
   assert.throws(() => manifestMessageIds({ chunks: [null] }), /chunk 1/)
 })
+
+test('buildManifest records the note it was given', () => {
+  assert.equal(sampleManifest({ note: 'quarterly accounts' }).note, 'quarterly accounts')
+})
+
+// A manifest without a note has to be byte-identical to one written before the flag existed,
+// or every backup made since would look like a different format to an older telstore.
+test('buildManifest leaves the note out entirely when there is none', () => {
+  assert.equal('note' in sampleManifest(), false)
+})
+
+test('parseManifest accepts a manifest carrying a note', () => {
+  const manifest = parseManifest(serializeManifest(sampleManifest({ note: 'keep until 2030' })))
+  assert.equal(manifest.note, 'keep until 2030')
+})
+
+// The manifest comes off a chat, where a person can edit the file and send it back. The note
+// is only ever shown, never computed with, but a field that is not what it claims to be is
+// the one thing this project refuses to shrug at.
+test('parseManifest refuses a note that is not text', () => {
+  const manifest = { ...sampleManifest(), note: { was: 'an object' } }
+
+  assert.throws(() => parseManifest(serializeManifest(manifest)), /note/)
+})

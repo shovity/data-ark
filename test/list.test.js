@@ -11,11 +11,11 @@ async function workspace(config = {}) {
   return configDir
 }
 
-function manifestMessage({ id, name, size, chunks, createdAt, msgId = 2000 }) {
+function manifestMessage({ id, name, size, chunks, createdAt, note = null, msgId = 2000 }) {
   return {
     id: msgId,
     fileName: `${id}.manifest.json`,
-    caption: manifestCaption({ id, name, size, chunks, createdAt }),
+    caption: manifestCaption({ id, name, size, chunks, createdAt, note }),
     date: Math.floor(Date.parse(createdAt) / 1000),
   }
 }
@@ -189,4 +189,64 @@ test('the backup id comes from the file name, not from the caption', async () =>
 
   assert.match(out.text(), /telstore-20260905-7f3a91/)
   assert.doesNotMatch(out.text(), /telstore-tampered-000000/)
+})
+
+const NOTED = manifestMessage({
+  id: 'telstore-20260903-c41d02',
+  name: 'accounts.tar',
+  size: 1024,
+  chunks: 1,
+  createdAt: '2026-09-03T10:00:00.000Z',
+  note: 'quarterly accounts',
+  msgId: 1950,
+})
+
+test('a backup with a note gets a column for it', async () => {
+  const configDir = await workspace()
+  const out = collect()
+
+  await runList({}, deps(configDir, [NOTED], out))
+
+  assert.match(out.text(), /BACKUP ID +FILE +SIZE +CHUNKS +CREATED +NOTE/)
+  assert.match(out.text(), /2026-09-03 +quarterly accounts/)
+})
+
+// Nobody has to look at a column of dashes to learn that they have never written a note.
+test('no notes anywhere means no column for them', async () => {
+  const configDir = await workspace()
+  const out = collect()
+
+  await runList({}, deps(configDir, [DATA_TAR, PHOTOS], out))
+
+  assert.equal(out.text().includes('NOTE'), false)
+})
+
+test('a backup without a note beside one that has a note shows a dash', async () => {
+  const configDir = await workspace()
+  const out = collect()
+
+  await runList({}, deps(configDir, [NOTED, PHOTOS], out))
+
+  assert.match(out.text(), /photos\.zip .* 2026-09-01 +—/)
+})
+
+// The table is for reading at a glance, and a 500-character note would push every column
+// off the side of it. The whole note is still in the manifest and on the card in the chat.
+test('a note too long for the table is cut short with an ellipsis', async () => {
+  const configDir = await workspace()
+  const out = collect()
+  const long = manifestMessage({
+    id: 'telstore-20260902-aabbcc',
+    name: 'long.tar',
+    size: 1024,
+    chunks: 1,
+    createdAt: '2026-09-02T10:00:00.000Z',
+    note: 'x'.repeat(60),
+    msgId: 1940,
+  })
+
+  await runList({}, deps(configDir, [long], out))
+
+  assert.match(out.text(), new RegExp(`${'x'.repeat(39)}…(\\s|$)`))
+  assert.equal(out.text().includes('x'.repeat(40)), false)
 })

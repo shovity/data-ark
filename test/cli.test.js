@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { route, interruptMessage } from '../src/cli.js'
+import { HELP, route, interruptMessage } from '../src/cli.js'
 
 test('a first argument that is not a subcommand is treated as a file to upload', () => {
   const r = route(['data.tar'])
@@ -250,4 +250,45 @@ test('--token takes no value', () => {
   // is what lets runLogin refuse it by name instead of ignoring it while it sits in the
   // history of a machine the user does not trust.
   assert.deepEqual(route(['login', '--token', 'tls1.abc']).args, ['tls1.abc'])
+})
+
+// A note with spaces in it reaches telstore as one argument only because the shell was told
+// to keep it whole. Both spellings do that, and both have to arrive here identically.
+test('a quoted note arrives whole whichever way it was written', () => {
+  assert.equal(route(['a.tar', '--note', 'quarterly accounts']).options.note, 'quarterly accounts')
+  assert.equal(route(['a.tar', '--note=quarterly accounts']).options.note, 'quarterly accounts')
+})
+
+// The failure this flag invites: an unquoted note, whose remaining words the shell hands over
+// as separate arguments and route can only read as more files to upload. Nothing here can fix
+// that — the words are gone by the time node starts — but the shape has to stay predictable
+// so the command that gets them can say what happened.
+test('an unquoted note leaves its remaining words as positionals', () => {
+  const r = route(['a.tar', '--note', 'quarterly', 'accounts'])
+
+  assert.equal(r.options.note, 'quarterly')
+  assert.deepEqual(r.args, ['a.tar', 'accounts'])
+})
+
+// A flag the parser accepts and the help never mentions is a feature only its author knows
+// about. This is the one test that notices when the two drift apart.
+test('every flag the parser accepts is named in the help', () => {
+  for (const flag of ['to', 'chunk-size', 'upload-concurrency', 'download-concurrency', 'out',
+    'note', 'limit', 'verbose', 'unset', 'yes', 'token', 'help']) {
+    assert.ok(HELP.includes(`--${flag}`), `--${flag} is missing from the help`)
+  }
+})
+
+// `--note ghi chu` and `--note "ghi chu"` look the same by the time node starts, with one
+// exception: the unquoted one leaves its own tail sitting after the flag as positionals.
+// That position is the only evidence there is, so route is where it gets written down.
+test('route notices a file named after --note', () => {
+  assert.equal(route(['a.tar', '--note', 'ghi', 'chu']).filesAfterNote, true)
+  assert.equal(route(['--note=ghi', 'chu']).filesAfterNote, true)
+})
+
+test('route reports no file after a note the shell kept whole', () => {
+  assert.equal(route(['a.tar', '--note', 'ghi chu']).filesAfterNote, false)
+  assert.equal(route(['not-found', '--note', 'march']).filesAfterNote, false)
+  assert.equal(route(['a.tar']).filesAfterNote, false)
 })

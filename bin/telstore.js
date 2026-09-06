@@ -97,6 +97,9 @@ async function main() {
       const { runUploads } = await import('../src/commands/upload.js')
 
       const { failed } = await runUploads(parsed.args, parsed.options, {
+        // Only route saw the command line, and an unquoted note is told apart from a plain
+        // missing file by where the words sat on it.
+        filesAfterNote: parsed.filesAfterNote,
         onBackupId: (id) => {
           currentBackupId = id
         },

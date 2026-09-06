@@ -1015,3 +1015,140 @@ test('a state file with an unusable chunk size names the file rather than the fl
     },
   )
 })
+
+test('a note reaches both the manifest and the card in the chat', async () => {
+  const ws = await tempWorkspace(1000)
+  const client = fakeClient()
+
+  await runUpload(
+    ws.filePath,
+    { to: '@store', 'chunk-size': '400', note: 'quarterly accounts' },
+    { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
+  )
+
+  const manifestMessage = client.messages.at(-1)
+
+  assert.equal(parseManifest(manifestMessage.bytes).note, 'quarterly accounts')
+  assert.equal(parseManifestCaption(manifestMessage.caption).note, 'quarterly accounts')
+})
+
+// The note names the backup, not its pieces. On every chunk it would turn one backup into
+// one search hit per chunk, which is the same reason #telstore lives on the manifest alone.
+test('a note stays off the chunk captions', async () => {
+  const ws = await tempWorkspace(1000)
+  const client = fakeClient()
+
+  await runUpload(
+    ws.filePath,
+    { to: '@store', 'chunk-size': '400', note: 'quarterly accounts' },
+    { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
+  )
+
+  for (const message of client.messages.filter((m) => !m.fileName.endsWith('.manifest.json'))) {
+    assert.equal(message.caption.includes('quarterly'), false)
+  }
+})
+
+// The note is only written into the manifest, which goes last — so a note Telegram will not
+// take has to be refused at the start, not after an hour of chunks that now point nowhere.
+test('a note too long to caption is refused before a single byte goes out', async () => {
+  const ws = await tempWorkspace(1000)
+  const client = fakeClient()
+
+  await assert.rejects(
+    () =>
+      runUpload(
+        ws.filePath,
+        { to: '@store', 'chunk-size': '400', note: 'x'.repeat(501) },
+        { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
+      ),
+    /--note is 501 characters/,
+  )
+
+  assert.equal(client.messages.length, 0)
+})
+
+// The trap the flag brings with it: `--note quarterly accounts` hands telstore a file named
+// "accounts", and "File does not exist" alone sends the reader looking for a file they never
+// meant to name. The words are gone by the time node starts, so saying so is all that is left.
+test('a missing file alongside a note says the note may have been split by the shell', async () => {
+  const ws = await tempWorkspace(1000)
+  const client = fakeClient()
+
+  await assert.rejects(
+    () =>
+      runUpload(
+        path.join(ws.dir, 'accounts'),
+        { to: '@store', note: 'quarterly' },
+        { ...deps(client), configDir: ws.configDir, silent: true, filesAfterNote: true },
+      ),
+    (err) => {
+      assert.match(err.message, /does not exist/)
+      assert.match(err.message, /--note "/)
+      return true
+    },
+  )
+})
+
+test('a missing file with no note in play is reported without the note advice', async () => {
+  const ws = await tempWorkspace(1000)
+  const client = fakeClient()
+
+  await assert.rejects(
+    () =>
+      runUpload(path.join(ws.dir, 'accounts'), { to: '@store' }, {
+        ...deps(client),
+        configDir: ws.configDir,
+        silent: true,
+      }),
+    (err) => {
+      assert.match(err.message, /does not exist/)
+      assert.equal(err.message.includes('--note'), false)
+      return true
+    },
+  )
+})
+
+// A note that still has a space in it is a note the shell was told to keep whole, so the
+// mistake the advice describes could not have happened to it. Repeating it there turns a
+// plain missing file into a hunt for a quoting bug that is not present.
+test('a note the shell kept whole draws no advice about quoting', async () => {
+  const ws = await tempWorkspace(1000)
+  const client = fakeClient()
+
+  await assert.rejects(
+    () =>
+      runUpload(
+        path.join(ws.dir, 'not-found'),
+        { to: '@store', note: 'ghi chu' },
+        { ...deps(client), configDir: ws.configDir, silent: true },
+      ),
+    (err) => {
+      assert.match(err.message, /does not exist/)
+      assert.equal(err.message.includes('--note'), false)
+      return true
+    },
+  )
+})
+
+// `telstore not-found --note march`: the note is one word, but nothing follows it on the
+// command line, so it cannot be the tail of a note the shell took apart. The file name is
+// simply wrong, and that is the whole story.
+test('a one-word note with nothing after it draws no advice about quoting', async () => {
+  const ws = await tempWorkspace(1000)
+  const client = fakeClient()
+
+  await assert.rejects(
+    () =>
+      runUpload(
+        path.join(ws.dir, 'not-found'),
+        { to: '@store', note: 'march' },
+        { ...deps(client), configDir: ws.configDir, silent: true, filesAfterNote: false },
+      ),
+    (err) => {
+      assert.match(err.message, /does not exist/)
+      assert.equal(err.message.includes('--note'), false)
+      return true
+    },
+  )
+})
