@@ -8,7 +8,9 @@ import { PART_SIZE, planChunks } from '../chunking.js'
 import { chunkCaption, manifestCaption } from '../caption.js'
 import { describeChat } from '../chat.js'
 import { closeQuietly, connect as realConnect } from '../client.js'
+import { askConfirm } from '../confirm.js'
 import { configFile, defaultConfigDir, loadConfig } from '../config.js'
+import { expandSources } from '../sources.js'
 import { assertLoggedIn } from '../session.js'
 import { requireChat, resolveSettings } from '../settings.js'
 import {
@@ -342,15 +344,6 @@ export async function runUpload(filePath, options = {}, deps = {}) {
 // shared through the same deps seam the tests drive, so runUpload stays the only caller of
 // connect and nothing here has to know what a client is.
 export async function runUploads(filePaths, options = {}, deps = {}) {
-  const paths = filePaths.map((filePath) => path.resolve(filePath))
-
-  // A single file is the common case and must read exactly as it did before this existed:
-  // no batch heading, no summary, and an error that reaches the caller rather than a report.
-  if (paths.length === 1) {
-    const { id, chunks } = await runUpload(paths[0], options, deps)
-    return { results: [{ path: paths[0], id, chunks }], failed: 0 }
-  }
-
   const {
     connect = realConnect,
     disconnect = (client) => client.destroy(),
@@ -359,7 +352,41 @@ export async function runUploads(filePaths, options = {}, deps = {}) {
     log: writeLog = (line) => console.log(line),
     silent = false,
     onFileDone = () => {},
+    confirm = askConfirm,
+    interactive = () => Boolean(process.stdin.isTTY),
   } = deps
+
+  const log = silent ? () => {} : writeLog
+  const warn = silent ? () => {} : writeErr
+
+  // What was typed and what will be sent are two different lists once a folder or a pattern is
+  // allowed: resolve them here, before anything else has an opinion about them.
+  const { paths: found, skipped } = await expandSources(filePaths)
+  const paths = found.map((filePath) => path.resolve(filePath))
+
+  // Something inside a named folder that is not going to be uploaded is still something the
+  // user pointed at, so it is said out loud rather than quietly missing from the list.
+  const folders = skipped.filter((entry) => entry.reason === 'directory')
+
+  if (folders.length > 0) {
+    warn(
+      `\ntelstore reads one level down, so these folders were left alone: ` +
+        `${folders.map((entry) => path.basename(entry.path)).join(', ')}. ` +
+        'Name one of them to upload what is inside it.\n',
+    )
+  }
+
+  for (const entry of skipped) {
+    if (entry.reason !== 'directory') warn(`\n${entry.path} was skipped: ${entry.reason}.\n`)
+  }
+
+  // A single file is the common case and must read exactly as it did before this existed:
+  // no batch heading, no question, no summary, and an error that reaches the caller rather
+  // than a report.
+  if (paths.length === 1) {
+    const { id, chunks } = await runUpload(paths[0], options, deps)
+    return { results: [{ path: paths[0], id, chunks }], failed: 0 }
+  }
 
   // Everything that can be known before the first byte goes out is settled here. A typo in the
   // fourth name must not surface an hour into the third file, and a destination nobody set is
@@ -369,8 +396,9 @@ export async function runUploads(filePaths, options = {}, deps = {}) {
 
   if (duplicate) {
     throw new Error(
-      `${duplicate} is named twice. Uploading one file twice would make two backups of the ` +
-        'same bytes, each with its own id — name it once, or run telstore again afterwards if ' +
+      `${duplicate} is named twice — a folder or a pattern can pick up a file that was ` +
+        'named on its own as well. Uploading one file twice would make two backups of the ' +
+        'same bytes, each with its own id: name it once, or run telstore again afterwards if ' +
         'a second copy is really what you want.',
     )
   }
@@ -383,12 +411,29 @@ export async function runUploads(filePaths, options = {}, deps = {}) {
   assertLoggedIn(config)
 
   const { values: settings } = resolveSettings(options, config, { file: configFile(configDir) })
-  requireChat(settings)
+  const chat = requireChat(settings)
 
-  for (const absPath of paths) await statSource(absPath)
+  const sizes = []
 
-  const log = silent ? () => {} : writeLog
-  const warn = silent ? () => {} : writeErr
+  for (const absPath of paths) sizes.push((await statSource(absPath)).size)
+
+  // The last thing before the first byte. A folder or a pattern hands telstore a list nobody
+  // has read yet, and even a hand-typed one is worth seeing added up: this is the moment where
+  // "23 files, 180 GB, to @family_photos" is still a question rather than an afternoon.
+  if (!options.yes) {
+    if (!interactive()) {
+      throw new Error(
+        `${paths.length} files to upload, and no terminal to confirm that in. Run again with ` +
+          '--yes to upload them without being asked.',
+      )
+    }
+
+    for (const line of listingLines(paths, sizes, chat)) log(line)
+
+    if (!(await confirm(`Upload these ${paths.length} files? [y/N] `))) {
+      throw new Error('Cancelled on request.')
+    }
+  }
 
   let shared = null
   const perFile = {
@@ -438,6 +483,23 @@ export async function runUploads(filePaths, options = {}, deps = {}) {
   for (const line of summaryLines(results, failed)) log(line)
 
   return { results, failed }
+}
+
+// What the batch is about to do, in the shape the summary will report it afterwards: the same
+// names, the same order, so the two lists can be read against each other.
+function listingLines(paths, sizes, chat) {
+  const names = paths.map((absPath) => path.basename(absPath))
+  const amounts = sizes.map(formatBytes)
+  const width = Math.max(...names.map((name) => name.length))
+  const amountWidth = Math.max(...amounts.map((amount) => amount.length))
+  const total = sizes.reduce((sum, size) => sum + size, 0)
+
+  return [
+    `${paths.length} files, ${formatBytes(total)}, to ${describeChat(chat)}`,
+    '',
+    ...names.map((name, i) => `  ${name.padEnd(width)}  ${amounts[i].padStart(amountWidth)}`),
+    '',
+  ]
 }
 
 // The one place a batch says how it went. Every file gets a line whether it worked or not:

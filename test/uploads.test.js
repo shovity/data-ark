@@ -54,7 +54,7 @@ test('every file named on the command line becomes its own backup', async () => 
 
   const { results, failed } = await runUploads(
     ws.paths,
-    { to: '@store', 'chunk-size': '400', 'upload-concurrency': '2' },
+    { to: '@store', 'chunk-size': '400', 'upload-concurrency': '2', yes: true },
     { ...uploadDeps(client), configDir: ws.configDir, partSize: 128, silent: true },
   )
 
@@ -81,7 +81,7 @@ test('a batch opens one connection and closes it once', async () => {
 
   await runUploads(
     ws.paths,
-    { to: '@store', 'chunk-size': '400' },
+    { to: '@store', 'chunk-size': '400', yes: true },
     {
       ...uploadDeps(client),
       connect: async () => {
@@ -124,7 +124,7 @@ test('a file that fails does not stop the ones named after it', async () => {
 
   const { results, failed } = await runUploads(
     ws.paths,
-    { to: '@store', 'chunk-size': '400' },
+    { to: '@store', 'chunk-size': '400', yes: true },
     { ...failSendAt(client, 2), configDir: ws.configDir, partSize: 128, silent: true },
   )
 
@@ -146,7 +146,7 @@ test('the summary names every file in the order they were given', async () => {
 
   const { results } = await runUploads(
     ws.paths,
-    { to: '@store', 'chunk-size': '400' },
+    { to: '@store', 'chunk-size': '400', yes: true },
     { ...failSendAt(client, 2), configDir: ws.configDir, partSize: 128, log: out.log },
   )
 
@@ -170,7 +170,7 @@ test('a batch where everything failed does not offer a restore command', async (
 
   const { failed } = await runUploads(
     ws.paths,
-    { to: '@store', 'chunk-size': '400' },
+    { to: '@store', 'chunk-size': '400', yes: true },
     { ...failSendAt(client, 1, 2), configDir: ws.configDir, partSize: 128, log: out.log },
   )
 
@@ -218,7 +218,9 @@ test('a path that does not exist stops the batch before the first byte goes out'
   assert.equal(client.messages.length, 0)
 })
 
-test('a directory among the files is refused by name, before the batch starts', async () => {
+// A folder is now the files inside it, so naming both the folder and one of those files is
+// the same mistake as naming a file twice — and it is caught by the same check.
+test('a folder named alongside one of its own files is refused as a duplicate', async () => {
   const ws = await tempWorkspace([300])
   const client = fakeClient()
 
@@ -229,7 +231,7 @@ test('a directory among the files is refused by name, before the batch starts', 
         { to: '@store', 'chunk-size': '400' },
         { ...uploadDeps(client), configDir: ws.configDir, partSize: 128, silent: true },
       ),
-    new RegExp(`${ws.dir} is not a file`),
+    /named twice/,
   )
 
   assert.equal(client.messages.length, 0)
@@ -288,7 +290,7 @@ test('a file that fails is named as soon as it fails, not only in the summary', 
 
   await runUploads(
     ws.paths,
-    { to: '@store', 'chunk-size': '400' },
+    { to: '@store', 'chunk-size': '400', yes: true },
     {
       ...failSendAt(client, 2),
       configDir: ws.configDir,
@@ -305,4 +307,194 @@ test('a file that fails is named as soon as it fails, not only in the summary', 
 
   assert.notEqual(failure, -1)
   assert.ok(failure < nextFile, 'the failure must be reported before the next file starts')
+})
+
+// --- folders, patterns and the question asked before a batch runs ---
+
+test('a folder is uploaded as the files inside it, one backup each', async () => {
+  const ws = await tempWorkspace([300, 300])
+  const client = fakeClient()
+
+  const { results, failed } = await runUploads(
+    [ws.dir],
+    { to: '@store', 'chunk-size': '400', yes: true },
+    { ...uploadDeps(client), configDir: ws.configDir, partSize: 128, silent: true },
+  )
+
+  assert.equal(failed, 0)
+  assert.deepEqual(
+    results.map((r) => path.basename(r.path)),
+    ['data-0.tar', 'data-1.tar'],
+  )
+})
+
+test('a folder telstore did not walk into is named on stderr, not passed over', async () => {
+  const ws = await tempWorkspace([300, 300])
+  const client = fakeClient()
+  const errors = []
+
+  await runUploads(
+    [ws.dir],
+    { to: '@store', 'chunk-size': '400', yes: true },
+    {
+      ...uploadDeps(client),
+      configDir: ws.configDir,
+      partSize: 128,
+      log: () => {},
+      writeErr: (line) => errors.push(line),
+    },
+  )
+
+  // tempWorkspace keeps its config in a subfolder, which is exactly the case being reported.
+  assert.match(errors.join(''), /config/)
+  assert.match(errors.join(''), /one level/)
+})
+
+test('a pattern that reached telstore intact is expanded the same way', async () => {
+  const ws = await tempWorkspace([300, 300])
+  const client = fakeClient()
+
+  const { results } = await runUploads(
+    [path.join(ws.dir, '*.tar')],
+    { to: '@store', 'chunk-size': '400', yes: true },
+    { ...uploadDeps(client), configDir: ws.configDir, partSize: 128, silent: true },
+  )
+
+  assert.deepEqual(
+    results.map((r) => path.basename(r.path)),
+    ['data-0.tar', 'data-1.tar'],
+  )
+})
+
+test('a folder holding one file is a single upload, with nothing asked and no summary', async () => {
+  const ws = await tempWorkspace([1000])
+  const client = fakeClient()
+  const out = collect()
+
+  const { results } = await runUploads(
+    [ws.dir],
+    { to: '@store', 'chunk-size': '400' },
+    {
+      ...uploadDeps(client),
+      configDir: ws.configDir,
+      partSize: 128,
+      log: out.log,
+      interactive: () => true,
+      confirm: async () => {
+        throw new Error('a single file must never be confirmed')
+      },
+    },
+  )
+
+  assert.equal(results.length, 1)
+  assert.match(out.text(), /Done\. Restore with:/)
+  assert.doesNotMatch(out.text(), /1 file:/)
+})
+
+test('the question shows every file, its size and where they are going', async () => {
+  const ws = await tempWorkspace([300, 1500])
+  const client = fakeClient()
+  const out = collect()
+  const asked = []
+
+  await runUploads(
+    ws.paths,
+    { to: '@store', 'chunk-size': '400' },
+    {
+      ...uploadDeps(client),
+      configDir: ws.configDir,
+      partSize: 128,
+      log: out.log,
+      interactive: () => true,
+      confirm: async (question) => {
+        asked.push(question)
+        return true
+      },
+    },
+  )
+
+  const text = out.text()
+  assert.match(text, /2 files, 1\.8 KB/)
+  assert.match(text, /@store/)
+  assert.match(text, /data-0\.tar\s+300 B/)
+  assert.match(text, /data-1\.tar\s+1\.5 KB/)
+  assert.equal(asked.length, 1)
+  assert.match(asked[0], /Upload these 2 files\? \[y\/N\]/)
+
+  // The list has to be on screen before the question is asked, not after it.
+  assert.ok(out.lines.length > 0)
+})
+
+test('answering anything but yes sends nothing at all', async () => {
+  const ws = await tempWorkspace([300, 300])
+  const client = fakeClient()
+
+  await assert.rejects(
+    () =>
+      runUploads(
+        ws.paths,
+        { to: '@store', 'chunk-size': '400' },
+        {
+          ...uploadDeps(client),
+          configDir: ws.configDir,
+          partSize: 128,
+          silent: true,
+          interactive: () => true,
+          confirm: async () => false,
+        },
+      ),
+    /Cancelled on request/,
+  )
+
+  assert.equal(client.messages.length, 0)
+})
+
+test('--yes uploads a batch without asking anything', async () => {
+  const ws = await tempWorkspace([300, 300])
+  const client = fakeClient()
+
+  const { failed } = await runUploads(
+    ws.paths,
+    { to: '@store', 'chunk-size': '400', yes: true },
+    {
+      ...uploadDeps(client),
+      configDir: ws.configDir,
+      partSize: 128,
+      silent: true,
+      interactive: () => true,
+      confirm: async () => {
+        throw new Error('--yes must not ask')
+      },
+    },
+  )
+
+  assert.equal(failed, 0)
+})
+
+// An empty line read off a pipe is not an answer, and treating it as "no" would make a batch
+// in a script fail for a reason nothing on screen explains.
+test('with no terminal to ask in, the batch stops and names the flag that goes on', async () => {
+  const ws = await tempWorkspace([300, 300])
+  const client = fakeClient()
+
+  await assert.rejects(
+    () =>
+      runUploads(
+        ws.paths,
+        { to: '@store', 'chunk-size': '400' },
+        {
+          ...uploadDeps(client),
+          configDir: ws.configDir,
+          partSize: 128,
+          silent: true,
+          interactive: () => false,
+          confirm: async () => {
+            throw new Error('nothing may be asked without a terminal')
+          },
+        },
+      ),
+    /--yes/,
+  )
+
+  assert.equal(client.messages.length, 0)
 })
