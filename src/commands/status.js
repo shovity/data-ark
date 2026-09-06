@@ -1,8 +1,9 @@
 import { countChunks } from '../chunking.js'
 import { describeChat } from '../chat.js'
-import { assertLoggedIn, closeQuietly, connect as realConnect } from '../client.js'
+import { closeQuietly, connect as realConnect } from '../client.js'
 import { configFile, defaultConfigDir, loadConfig } from '../config.js'
 import { formatBytes } from '../progress.js'
+import { assertLoggedIn } from '../session.js'
 import { resolveSettings } from '../settings.js'
 import { canResume, listStates } from '../state.js'
 

@@ -1,7 +1,6 @@
 import { chatName, describeChat } from '../chat.js'
 import {
   DELETE_BATCH_SIZE,
-  assertLoggedIn,
   closeQuietly,
   connect as realConnect,
   deleteMessages as realDeleteMessages,
@@ -12,6 +11,7 @@ import { askConfirm } from '../confirm.js'
 import { configFile, defaultConfigDir, loadConfig } from '../config.js'
 import { manifestFileName, manifestMessageIds, parseManifestJson } from '../manifest.js'
 import { formatBytes, formatDuration } from '../progress.js'
+import { assertLoggedIn } from '../session.js'
 import { requireChat, resolveSettings } from '../settings.js'
 import { clearState, findStates } from '../state.js'
 

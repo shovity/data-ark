@@ -1,14 +1,10 @@
 #!/usr/bin/env node
 import { route, HELP, interruptMessage } from '../src/cli.js'
-import { runLogin } from '../src/commands/login.js'
-import { runConfig } from '../src/commands/config.js'
-import { runDelete } from '../src/commands/delete.js'
-import { runList } from '../src/commands/list.js'
-import { runLogout } from '../src/commands/logout.js'
-import { runRestore } from '../src/commands/restore.js'
-import { runStatus } from '../src/commands/status.js'
-import { runToken } from '../src/commands/token.js'
-import { runUpload } from '../src/commands/upload.js'
+
+// Each command is imported where it runs, not here. Importing all nine up front pulled
+// teleproto into every invocation — about 0.3s and 45MB — including `--help`, `config` and
+// `logout`, which never open a socket. `src/cli.js` stays a static import because parsing the
+// arguments is the one thing every run does, and nothing it touches reaches the network.
 
 const SIGINT_EXIT_CODE = 130
 
@@ -45,55 +41,84 @@ async function main() {
       process.stdout.write(HELP)
       return
 
-    case 'login':
+    case 'login': {
+      const { runLogin } = await import('../src/commands/login.js')
+
       await runLogin({
         args: parsed.args,
         token: Boolean(parsed.options.token),
         verbose: Boolean(parsed.options.verbose),
       })
       return
+    }
 
-    case 'logout':
+    case 'logout': {
+      const { runLogout } = await import('../src/commands/logout.js')
+
       await runLogout()
       return
+    }
 
-    case 'list':
+    case 'list': {
+      const { runList } = await import('../src/commands/list.js')
+
       await runList(parsed.options)
       return
+    }
 
-    case 'status':
+    case 'status': {
+      const { runStatus } = await import('../src/commands/status.js')
+
       await runStatus(parsed.options)
       return
+    }
 
-    case 'config':
+    case 'config': {
+      const { runConfig } = await import('../src/commands/config.js')
+
       await runConfig(parsed.args, parsed.options)
       return
+    }
 
-    case 'token':
+    case 'token': {
+      const { runToken } = await import('../src/commands/token.js')
+
       await runToken(parsed.args, parsed.options)
       return
+    }
 
-    case 'upload':
+    case 'upload': {
+      const { runUpload } = await import('../src/commands/upload.js')
+
       await runUpload(parsed.args[0], parsed.options, {
         onBackupId: (id) => {
           currentBackupId = id
         },
       })
       return
+    }
 
-    case 'restore':
+    case 'restore': {
       if (!parsed.args[0]) {
         throw new Error('Missing backup id. Example: npx telstore restore telstore-20260905-7f3a91')
       }
+
+      const { runRestore } = await import('../src/commands/restore.js')
+
       await runRestore(parsed.args[0], parsed.options)
       return
+    }
 
-    case 'delete':
+    case 'delete': {
       if (!parsed.args[0]) {
         throw new Error('Missing backup id. Example: npx telstore delete telstore-20260905-7f3a91')
       }
+
+      const { runDelete } = await import('../src/commands/delete.js')
+
       await runDelete(parsed.args[0], parsed.options)
       return
+    }
 
     default:
       throw new Error(`Unknown command: ${parsed.command}`)

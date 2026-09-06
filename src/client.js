@@ -5,7 +5,7 @@ import { StringSession } from 'teleproto/sessions/index.js'
 
 import { manifestFileName } from './manifest.js'
 import { withRetry } from './retry.js'
-import { unlockConfig } from './session.js'
+import { assertLoggedIn, unlockConfig } from './session.js'
 import { DEFAULT_STALL_MS, withStallTimeout } from './stall.js'
 
 // teleproto narrates its version, every connection and every disconnect at info level, and
@@ -119,18 +119,6 @@ export async function closeQuietly(client, disconnect, onWarn) {
     await disconnect(client)
   } catch (err) {
     if (onWarn) onWarn(err)
-  }
-}
-
-// Two shapes count as logged in: the ordinary one login writes, and the sealed blob that
-// "login --token" leaves, which holds the same three fields behind a passphrase. Checked
-// before anything asks for that passphrase, so somebody who never logged in is told so rather
-// than asked to type a secret for an account that is not there.
-export function assertLoggedIn(config) {
-  if (config.sealed) return
-
-  if (!config.session || !config.apiId || !config.apiHash) {
-    throw new Error('Not logged in — run "npx telstore login" first.')
   }
 }
 

@@ -239,3 +239,48 @@ test('a token cannot be typed on the command line, and login says so instead of 
   assert.match(stderr, /shell history/)
   assert.doesNotMatch(stderr, /at Object|at async/)
 })
+
+// Loading teleproto costs about 0.3s and 45MB, and the commands that never reach the network
+// have no use for either. Nothing in the suite would notice a static import creeping back in
+// — the CLI would simply get slower — so this asks the runtime which scripts it actually
+// loaded. V8's coverage output names every script that was executed, teleproto's included.
+async function teleprotoScriptsLoadedBy(args, env = {}) {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'telstore-cov-'))
+
+  try {
+    // A command that exits non-zero has still loaded whatever it loaded, and refusing early
+    // is exactly what the token case below does, so the exit code is not what is being read.
+    await run(process.execPath, [BIN, ...args], {
+      env: { ...process.env, ...env, NODE_V8_COVERAGE: dir },
+    }).catch(() => {})
+
+    const files = await fs.readdir(dir)
+    let count = 0
+
+    for (const name of files) {
+      const text = await fs.readFile(path.join(dir, name), 'utf8')
+      count += (text.match(/"url":"[^"]*\/teleproto\//g) ?? []).length
+    }
+
+    return count
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true })
+  }
+}
+
+test('the offline commands do not load teleproto at all', async () => {
+  assert.equal(await teleprotoScriptsLoadedBy(['--help']), 0)
+})
+
+test('token refuses a config that is not logged in without loading teleproto', async () => {
+  // token never opens a socket: it reads the config, asks for a passphrase and seals what is
+  // already on disk. The only thing that used to pull teleproto in was assertLoggedIn living
+  // in src/client.js, next to connect.
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'telstore-home-'))
+
+  try {
+    assert.equal(await teleprotoScriptsLoadedBy(['token'], { HOME: home }), 0)
+  } finally {
+    await fs.rm(home, { recursive: true, force: true })
+  }
+})

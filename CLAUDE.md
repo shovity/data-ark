@@ -156,7 +156,17 @@ enough to test without a client.
 `connect` in `src/client.js` is the one door a session goes through, which is why opening a
 sealed one lives there and not in the commands: eight copies of "how a session is unlocked" is
 eight things to keep in step, and a ninth command would simply forget. `src/session.js` holds
-the part that knows both config shapes, so `client.js` stays about Telegram.
+the part that knows both config shapes — `unlockConfig` and `assertLoggedIn` both — so
+`client.js` stays about Telegram. `assertLoggedIn` sat beside `connect` once, and that alone
+was why `token`, which never opens a socket, loaded the whole of teleproto.
+
+`bin/telstore.js` imports each command inside its own `switch` arm rather than at the top.
+Nine static imports meant every run paid for teleproto — about 0.4s and 50MB — including
+`--help`, `config`, `logout` and `token`, none of which touch the network; those now start in
+0.06s. `src/cli.js` stays a static import because every run parses its arguments. Nothing in
+the suite would notice a static import creeping back in — the CLI would simply get slower —
+so `test/bin.test.js` runs the binary under `NODE_V8_COVERAGE` and counts the teleproto
+scripts V8 says were executed, which must be none.
 
 `src/confirm.js` holds the y/N prompt `restore` and `delete` both ask through, and
 `findManifestMessage` lives in `src/client.js` rather than in either command, because two

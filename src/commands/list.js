@@ -1,12 +1,12 @@
 import { MANIFEST_TAG, parseManifestCaption } from '../caption.js'
 import { chatName, describeChat } from '../chat.js'
 import {
-  assertLoggedIn,
   closeQuietly,
   connect as realConnect,
   searchDocuments,
 } from '../client.js'
 import { configFile, defaultConfigDir, loadConfig } from '../config.js'
+import { assertLoggedIn } from '../session.js'
 import { requireChat, resolveSettings } from '../settings.js'
 
 const UNKNOWN = '—'

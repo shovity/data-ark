@@ -1,7 +1,6 @@
-import { assertLoggedIn } from '../client.js'
 import { defaultConfigDir, loadConfig } from '../config.js'
 import { createPrompts } from '../prompt.js'
-import { unlockConfig } from '../session.js'
+import { assertLoggedIn, unlockConfig } from '../session.js'
 import { knownSettings } from '../settings.js'
 import { encodeToken } from '../token.js'
 

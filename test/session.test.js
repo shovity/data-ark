@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { unlockConfig } from '../src/session.js'
+import { assertLoggedIn, unlockConfig } from '../src/session.js'
 import { encodeToken } from '../src/token.js'
 
 const ACCOUNT = { apiId: 123456, apiHash: '0123456789abcdef', session: '1BQANOTEu' }
@@ -53,4 +53,24 @@ test('a sealed config takes its account from the token and not from around it', 
 
   assert.equal(opened.apiId, ACCOUNT.apiId)
   assert.equal(opened.session, ACCOUNT.session)
+})
+
+test('assertLoggedIn throws on an empty config', () => {
+  assert.throws(() => assertLoggedIn({}), /Not logged in/)
+})
+
+test('assertLoggedIn throws when apiHash is missing', () => {
+  assert.throws(() => assertLoggedIn({ session: 's', apiId: 1 }), /Not logged in/)
+})
+
+test('assertLoggedIn does not throw on a complete config', () => {
+  assert.doesNotThrow(() => assertLoggedIn({ session: 's', apiId: 1, apiHash: 'h' }))
+})
+
+test('assertLoggedIn accepts a config whose session is sealed behind a passphrase', () => {
+  assert.doesNotThrow(() => assertLoggedIn({ sealed: 'tls1.abc' }))
+})
+
+test('assertLoggedIn still refuses a config with neither shape', () => {
+  assert.throws(() => assertLoggedIn({ settings: { chat: 'me' } }), /Not logged in/)
 })

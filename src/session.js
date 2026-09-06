@@ -22,3 +22,16 @@ export async function unlockConfig(config, { readSecret = realReadSecret } = {})
 
   return { apiId, apiHash, session }
 }
+
+// Two shapes count as logged in: the ordinary one login writes, and the sealed blob that
+// "login --token" leaves, which holds the same three fields behind a passphrase. It lives
+// here rather than beside connect because knowing both shapes is this file's whole job, and
+// because `token` is an offline command: reaching for it through src/client.js pulled the
+// whole of teleproto into a run that never opens a socket.
+export function assertLoggedIn(config) {
+  if (config.sealed) return
+
+  if (!config.session || !config.apiId || !config.apiHash) {
+    throw new Error('Not logged in — run "npx telstore login" first.')
+  }
+}

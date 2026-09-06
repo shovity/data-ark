@@ -5,22 +5,9 @@ import { LogLevel } from 'teleproto/extensions/Logger.js'
 
 import {
   DELETE_BATCH_SIZE,
-  assertLoggedIn,
   createLogger,
   deleteMessages,
 } from '../src/client.js'
-
-test('assertLoggedIn throws on an empty config', () => {
-  assert.throws(() => assertLoggedIn({}), /Not logged in/)
-})
-
-test('assertLoggedIn throws when apiHash is missing', () => {
-  assert.throws(() => assertLoggedIn({ session: 's', apiId: 1 }), /Not logged in/)
-})
-
-test('assertLoggedIn does not throw on a complete config', () => {
-  assert.doesNotThrow(() => assertLoggedIn({ session: 's', apiId: 1, apiHash: 'h' }))
-})
 
 test('the Telegram logger is silent unless --verbose is given', () => {
   const quiet = createLogger(false)
@@ -177,10 +164,3 @@ test('the batch size is the hundred Telegram accepts per request', () => {
   assert.equal(DELETE_BATCH_SIZE, 100)
 })
 
-test('assertLoggedIn accepts a config whose session is sealed behind a passphrase', () => {
-  assert.doesNotThrow(() => assertLoggedIn({ sealed: 'tls1.abc' }))
-})
-
-test('assertLoggedIn still refuses a config with neither shape', () => {
-  assert.throws(() => assertLoggedIn({ settings: { chat: 'me' } }), /Not logged in/)
-})
