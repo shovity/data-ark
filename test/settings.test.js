@@ -9,22 +9,22 @@ import {
   requireChat,
   resolveSettings,
 } from '../src/settings.js'
-import { DEFAULT_CHUNK_SIZE, DEFAULT_CONCURRENCY } from '../src/chunking.js'
+import { DEFAULT_CHUNK_SIZE, DEFAULT_UPLOAD_CONCURRENCY } from '../src/chunking.js'
 
 const FILE = '/home/someone/.telstore/config.json'
 
 const resolve = (options, config) => resolveSettings(options, config, { file: FILE })
 
 test('a flag beats a stored setting, which beats the built-in default', () => {
-  const stored = { settings: { chat: '@stored', concurrency: 4 } }
+  const stored = { settings: { chat: '@stored', uploadConcurrency: 4 } }
 
   const { values, source } = resolve({ to: '@flag' }, stored)
 
   assert.equal(values.chat, '@flag')
   assert.equal(source('chat'), 'flag')
 
-  assert.equal(values.concurrency, 4)
-  assert.equal(source('concurrency'), 'settings')
+  assert.equal(values.uploadConcurrency, 4)
+  assert.equal(source('uploadConcurrency'), 'settings')
 
   assert.equal(values.limit, DEFAULT_LIMIT)
   assert.equal(source('limit'), 'default')
@@ -35,7 +35,7 @@ test('an empty config resolves every key to its default', () => {
 
   assert.equal(values.chat, null)
   assert.equal(values.chunkSize, DEFAULT_CHUNK_SIZE)
-  assert.equal(values.concurrency, DEFAULT_CONCURRENCY)
+  assert.equal(values.uploadConcurrency, DEFAULT_UPLOAD_CONCURRENCY)
   assert.equal(values.limit, DEFAULT_LIMIT)
   assert.equal(values.verbose, false)
 
@@ -62,17 +62,17 @@ test('a size is parsed the same whether it arrives as a flag or from the file', 
 
 test('a stored value that cannot be used names the file, never a flag nobody typed', () => {
   assert.throws(
-    () => resolve({}, { settings: { concurrency: 0 } }),
+    () => resolve({}, { settings: { uploadConcurrency: 0 } }),
     (err) => {
-      assert.match(err.message, /concurrency in \/home\/someone\/\.telstore\/config\.json/)
-      assert.doesNotMatch(err.message, /--concurrency/)
+      assert.match(err.message, /uploadConcurrency in \/home\/someone\/\.telstore\/config\.json/)
+      assert.doesNotMatch(err.message, /--upload-concurrency/)
       return true
     },
   )
 })
 
 test('a bad flag still names the flag', () => {
-  assert.throws(() => resolve({ concurrency: '0' }, {}), /Invalid --concurrency: "0"/)
+  assert.throws(() => resolve({ 'upload-concurrency': '0' }, {}), /Invalid --upload-concurrency: "0"/)
   assert.throws(() => resolve({ limit: 'lots' }, {}), /Invalid --limit: "lots"/)
   assert.throws(() => resolve({ 'chunk-size': '9GB' }, {}), /Invalid --chunk-size: "9GB"/)
 })
@@ -80,7 +80,10 @@ test('a bad flag still names the flag', () => {
 test('a stored setting of the wrong JSON type is refused, not coerced', () => {
   assert.throws(() => resolve({}, { settings: { chat: true } }), /Invalid chat in/)
   assert.throws(() => resolve({}, { settings: { chat: 42.5 } }), /Invalid chat in/)
-  assert.throws(() => resolve({}, { settings: { concurrency: [] } }), /Invalid concurrency in/)
+  assert.throws(
+    () => resolve({}, { settings: { uploadConcurrency: [] } }),
+    /Invalid uploadConcurrency in/,
+  )
   assert.throws(() => resolve({}, { settings: { verbose: 'yes' } }), /Invalid verbose in/)
 })
 
@@ -119,4 +122,29 @@ test('credentials are named as login business, not as a misspelt setting', () =>
   assert.equal(isManagedByLogin('session'), true)
   assert.equal(isManagedByLogin('apiId'), true)
   assert.equal(isManagedByLogin('chat'), false)
+})
+
+// Upload counts 512KB parts and download counts 8MB slices, so one number cannot serve both:
+// the value that saturates an upload holds sixteen times as much in flight on a restore, and
+// pushes the bandwidth a link must sustain to stay under the stall deadline up with it.
+test('upload and download concurrency are separate settings with separate defaults', () => {
+  const { values, source } = resolve({}, {})
+
+  assert.equal(values.uploadConcurrency, 32)
+  assert.equal(values.downloadConcurrency, 8)
+  assert.equal(source('uploadConcurrency'), 'default')
+  assert.equal(source('downloadConcurrency'), 'default')
+})
+
+test('each concurrency answers to its own flag and its own stored key', () => {
+  const byFlag = resolve({ 'upload-concurrency': '16', 'download-concurrency': '4' }, {})
+
+  assert.equal(byFlag.values.uploadConcurrency, 16)
+  assert.equal(byFlag.values.downloadConcurrency, 4)
+
+  const byFile = resolve({}, { settings: { uploadConcurrency: 16, downloadConcurrency: 4 } })
+
+  assert.equal(byFile.values.uploadConcurrency, 16)
+  assert.equal(byFile.values.downloadConcurrency, 4)
+  assert.equal(byFile.source('uploadConcurrency'), 'settings')
 })

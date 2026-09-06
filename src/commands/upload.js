@@ -95,7 +95,7 @@ export async function runUpload(filePath, options = {}, deps = {}) {
     file: configFile(configDir),
   })
   const chat = requireChat(settings)
-  const concurrency = settings.concurrency
+  const concurrency = settings.uploadConcurrency
 
   const key = stateKey(absPath, stat.size, stat.mtimeMs)
 

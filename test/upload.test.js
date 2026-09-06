@@ -79,7 +79,7 @@ test('splits the file into the right number of chunks and uploads them all', asy
 
   const result = await runUpload(
     ws.filePath,
-    { to: '@store', 'chunk-size': '400', concurrency: '2' },
+    { to: '@store', 'chunk-size': '400', 'upload-concurrency': '2' },
     { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
   )
 
@@ -300,7 +300,7 @@ test('a finished upload clears the state', async () => {
   assert.equal(await loadState(key, ws.configDir), null)
 })
 
-test('a non-numeric --concurrency gives a clear error', async () => {
+test('a non-numeric --upload-concurrency gives a clear error', async () => {
   const ws = await tempWorkspace(1000)
   const client = fakeClient()
 
@@ -308,14 +308,14 @@ test('a non-numeric --concurrency gives a clear error', async () => {
     () =>
       runUpload(
         ws.filePath,
-        { to: '@store', 'chunk-size': '400', concurrency: 'abc' },
+        { to: '@store', 'chunk-size': '400', 'upload-concurrency': 'abc' },
         { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
       ),
-    /--concurrency/,
+    /--upload-concurrency/,
   )
 })
 
-test('--concurrency of 0 gives a clear error instead of hanging forever', async () => {
+test('--upload-concurrency of 0 gives a clear error instead of hanging forever', async () => {
   const ws = await tempWorkspace(1000)
   const client = fakeClient()
 
@@ -323,10 +323,10 @@ test('--concurrency of 0 gives a clear error instead of hanging forever', async 
     () =>
       runUpload(
         ws.filePath,
-        { to: '@store', 'chunk-size': '400', concurrency: '0' },
+        { to: '@store', 'chunk-size': '400', 'upload-concurrency': '0' },
         { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
       ),
-    /--concurrency/,
+    /--upload-concurrency/,
   )
 })
 
@@ -701,7 +701,7 @@ test('a file changed during the upload sends no manifest and gives a clear error
   assert.notEqual(newKey, key, 'a changed file changes the key, so next time is a new backup')
 })
 
-test('an oversized --concurrency is blocked instead of holding gigabytes of buffers', async () => {
+test('an oversized --upload-concurrency is blocked instead of holding gigabytes of buffers', async () => {
   const ws = await tempWorkspace(1000)
   const client = fakeClient()
 
@@ -709,11 +709,11 @@ test('an oversized --concurrency is blocked instead of holding gigabytes of buff
     () =>
       runUpload(
         ws.filePath,
-        { to: '@store', 'chunk-size': '400', concurrency: '4000' },
+        { to: '@store', 'chunk-size': '400', 'upload-concurrency': '4000' },
         { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
       ),
     (err) => {
-      assert.match(err.message, /--concurrency/)
+      assert.match(err.message, /--upload-concurrency/)
       assert.match(err.message, /1 to 64/)
       return true
     },
@@ -722,13 +722,13 @@ test('an oversized --concurrency is blocked instead of holding gigabytes of buff
   assert.equal(client.messages.length, 0)
 })
 
-test('--concurrency of exactly 64 still runs', async () => {
+test('--upload-concurrency of exactly 64 still runs', async () => {
   const ws = await tempWorkspace(1000)
   const client = fakeClient()
 
   const result = await runUpload(
     ws.filePath,
-    { to: '@store', 'chunk-size': '400', concurrency: '64' },
+    { to: '@store', 'chunk-size': '400', 'upload-concurrency': '64' },
     { ...deps(client), configDir: ws.configDir, partSize: 128, silent: true },
   )
 

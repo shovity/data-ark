@@ -5,7 +5,7 @@ import { promisify } from 'node:util'
 import { Api } from 'telegram'
 import { readBigIntFromBuffer } from 'telegram/Helpers.js'
 
-import { DEFAULT_CONCURRENCY, PART_SIZE, MAX_PARTS } from './chunking.js'
+import { DEFAULT_UPLOAD_CONCURRENCY, PART_SIZE, MAX_PARTS } from './chunking.js'
 import { withRetry } from './retry.js'
 import { DEFAULT_STALL_MS, withStallTimeout } from './stall.js'
 
@@ -39,7 +39,7 @@ export async function uploadRange(client, fd, options) {
     offset,
     length,
     fileName,
-    concurrency = DEFAULT_CONCURRENCY,
+    concurrency = DEFAULT_UPLOAD_CONCURRENCY,
     partSize = PART_SIZE,
     onProgress,
     retryOptions,

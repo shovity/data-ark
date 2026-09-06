@@ -1,7 +1,8 @@
 import { normalizeChatTarget } from './chat.js'
 import {
   DEFAULT_CHUNK_SIZE,
-  DEFAULT_CONCURRENCY,
+  DEFAULT_DOWNLOAD_CONCURRENCY,
+  DEFAULT_UPLOAD_CONCURRENCY,
   MAX_CONCURRENCY,
   parseSize,
 } from './chunking.js'
@@ -74,9 +75,9 @@ export const SETTINGS = {
     format: (value) => String(value),
     describe: (value) => formatBytes(value),
   },
-  concurrency: {
-    flag: 'concurrency',
-    default: DEFAULT_CONCURRENCY,
+  uploadConcurrency: {
+    flag: 'upload-concurrency',
+    default: DEFAULT_UPLOAD_CONCURRENCY,
     parse: (raw, where) =>
       wholeNumber(
         raw,
@@ -85,6 +86,20 @@ export const SETTINGS = {
         MAX_CONCURRENCY,
         `Must be an integer from 1 to ${MAX_CONCURRENCY} — each slot holds a 512KB part in RAM ` +
           'and Telegram answers with FLOOD_WAIT if too many requests go out at once.',
+      ),
+    format: (value) => String(value),
+  },
+  downloadConcurrency: {
+    flag: 'download-concurrency',
+    default: DEFAULT_DOWNLOAD_CONCURRENCY,
+    parse: (raw, where) =>
+      wholeNumber(
+        raw,
+        where,
+        1,
+        MAX_CONCURRENCY,
+        `Must be an integer from 1 to ${MAX_CONCURRENCY} — each slot runs its own download ` +
+          'stream, and Telegram answers with FLOOD_WAIT if too many requests go out at once.',
       ),
     format: (value) => String(value),
   },

@@ -9,6 +9,7 @@ import { runRestore, realDownloadChunk } from '../src/commands/restore.js'
 import { buildManifest, serializeManifest, manifestFileName } from '../src/manifest.js'
 import { saveConfig } from '../src/config.js'
 import { createProgress } from '../src/progress.js'
+import { DEFAULT_DOWNLOAD_CONCURRENCY } from '../src/chunking.js'
 
 function sha(buf) {
   return createHash('sha256').update(buf).digest('hex')
@@ -335,8 +336,8 @@ test('every chunk download is handed retry options it can announce through', asy
 
   await runRestore(backup.id, { out }, {
     ...base,
-    downloadChunk: (c, message, handle, offset, onProgress, retryOptions) => {
-      handed.push(retryOptions)
+    downloadChunk: (c, message, handle, offset, onProgress, options) => {
+      handed.push(options.retryOptions)
       return base.downloadChunk(c, message, handle, offset, onProgress)
     },
   })
@@ -362,11 +363,11 @@ test('the first two retries are swallowed and the third is announced', async () 
     silent: false,
     log: () => {},
     writeErr: (line) => written.push(line),
-    downloadChunk: (c, message, handle, offset, onProgress, retryOptions) => {
+    downloadChunk: (c, message, handle, offset, onProgress, options) => {
       const err = new Error('-503: Timeout (caused by upload.GetFile)')
-      retryOptions.onRetry(err, 1, 1000, 200)
-      retryOptions.onRetry(err, 2, 2000, 200)
-      retryOptions.onRetry(err, 3, 4000, 200)
+      options.retryOptions.onRetry(err, 1, 1000, 200)
+      options.retryOptions.onRetry(err, 2, 2000, 200)
+      options.retryOptions.onRetry(err, 3, 4000, 200)
       return base.downloadChunk(c, message, handle, offset, onProgress)
     },
   })
@@ -392,8 +393,8 @@ test('an attempt that took a minute to fail is announced on the first retry', as
     silent: false,
     log: () => {},
     writeErr: (line) => written.push(line),
-    downloadChunk: (c, message, handle, offset, onProgress, retryOptions) => {
-      retryOptions.onRetry(new Error('Telegram stopped sending slice 3/9'), 1, 1000, 60_000)
+    downloadChunk: (c, message, handle, offset, onProgress, options) => {
+      options.retryOptions.onRetry(new Error('Telegram stopped sending slice 3/9'), 1, 1000, 60_000)
       return base.downloadChunk(c, message, handle, offset, onProgress)
     },
   })
@@ -415,8 +416,8 @@ test('a wait longer than a minute says telstore is waiting, not stuck', async ()
     silent: false,
     log: () => {},
     writeErr: (line) => written.push(line),
-    downloadChunk: (c, message, handle, offset, onProgress, retryOptions) => {
-      retryOptions.onRetry(new Error('FLOOD_WAIT_3600'), 1, 3_600_000)
+    downloadChunk: (c, message, handle, offset, onProgress, options) => {
+      options.retryOptions.onRetry(new Error('FLOOD_WAIT_3600'), 1, 3_600_000)
       return base.downloadChunk(c, message, handle, offset, onProgress)
     },
   })
@@ -452,7 +453,7 @@ test('realDownloadChunk carries the retry options through to the downloader', as
     handle,
     0,
     () => {},
-    { baseDelayMs: 0, sleep: async () => {}, onRetry: (err) => attempts.push(err.message) },
+    { retryOptions: { baseDelayMs: 0, sleep: async () => {}, onRetry: (err) => attempts.push(err.message) } },
   )
 
   await handle.close()
@@ -523,4 +524,48 @@ test('a chunk that fails still closes the bar line before the error', async () =
     'the cursor is left on a fresh line so the error does not land on the bar',
   )
   assert.doesNotMatch(written.at(-1), /100%/)
+})
+
+// A restore that ignored the setting would still reassemble the file, so nothing else in
+// this suite would notice: the only evidence is what reaches the pool.
+test('restore hands the download pool the size the flag asked for', async () => {
+  const backup = fakeBackup()
+  const { dir, configDir } = await tempConfig()
+  const base = deps(fakeClient(backup), configDir)
+  const seen = []
+
+  await runRestore(
+    backup.id,
+    { out: path.join(dir, 'out.tar'), 'download-concurrency': '3' },
+    {
+      ...base,
+      downloadChunk: (c, message, handle, offset, onProgress, options) => {
+        seen.push(options?.concurrency)
+        return base.downloadChunk(c, message, handle, offset, onProgress)
+      },
+    },
+  )
+
+  assert.deepEqual(seen, backup.manifest.chunks.map(() => 3))
+})
+
+test('with no flag the download pool gets the built-in default', async () => {
+  const backup = fakeBackup()
+  const { dir, configDir } = await tempConfig()
+  const base = deps(fakeClient(backup), configDir)
+  const seen = []
+
+  await runRestore(
+    backup.id,
+    { out: path.join(dir, 'out.tar') },
+    {
+      ...base,
+      downloadChunk: (c, message, handle, offset, onProgress, options) => {
+        seen.push(options?.concurrency)
+        return base.downloadChunk(c, message, handle, offset, onProgress)
+      },
+    },
+  )
+
+  assert.deepEqual(seen, backup.manifest.chunks.map(() => DEFAULT_DOWNLOAD_CONCURRENCY))
 })

@@ -40,7 +40,8 @@ npx telstore config chunkSize --unset     # back to the default
 |---|---|---|---|
 | `chat` | `--to` | none | `@username`, `-100123…`, or `me`. A negative channel id works with a space or an `=`, as a flag or as a config value. |
 | `chunkSize` | `--chunk-size` | `1800MB` | e.g. `1.8GB`, `500MB`. Hard ceiling 1950MB. An unfinished backup keeps the size it started with. |
-| `concurrency` | `--concurrency` | `8` | 512KB parts sent in parallel. An integer from 1 to 64. Upload only — `restore` downloads through its own fixed pool of workers. |
+| `uploadConcurrency` | `--upload-concurrency` | `32` | 512KB parts sent in parallel while uploading. An integer from 1 to 64. |
+| `downloadConcurrency` | `--download-concurrency` | `8` | 8MB slices fetched in parallel while restoring. An integer from 1 to 64. |
 | `limit` | `--limit` | `20` | How many backups `list` shows, newest first |
 | `verbose` | `--verbose` | off | Show the Telegram client's own connection logs, hidden by default so they do not break up the progress bar |
 

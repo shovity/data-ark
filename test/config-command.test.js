@@ -18,7 +18,8 @@ test('with no arguments every setting is listed with where its value came from',
 
   assert.match(out.text(), /chat\s+@store$/m)
   assert.doesNotMatch(out.text(), /chat.*\(default\)/)
-  assert.match(out.text(), /concurrency\s+8\s+\(default\)/)
+  assert.match(out.text(), /uploadConcurrency\s+32\s+\(default\)/)
+  assert.match(out.text(), /downloadConcurrency\s+8\s+\(default\)/)
   assert.match(out.text(), /limit\s+20\s+\(default\)/)
 })
 
@@ -125,7 +126,10 @@ test('a value that cannot be used is refused before anything is written', async 
   await saveConfig({ settings: { chunkSize: 400 } }, configDir)
 
   await assert.rejects(() => runConfig(['chunkSize', '9GB'], {}, deps(configDir, collect())), /1950MB/)
-  await assert.rejects(() => runConfig(['concurrency', '0'], {}, deps(configDir, collect())), /1 to 64/)
+  await assert.rejects(
+    () => runConfig(['uploadConcurrency', '0'], {}, deps(configDir, collect())),
+    /1 to 64/,
+  )
   await assert.rejects(() => runConfig(['chat', '  '], {}, deps(configDir, collect())), /must not be empty/)
 
   assert.deepEqual((await loadConfig(configDir)).settings, { chunkSize: 400 })
@@ -172,7 +176,7 @@ test('an unknown setting is refused with the list of real ones', async () => {
 
   await assert.rejects(() => runConfig(['nonsense', 'x'], {}, deps(configDir, collect())), (err) => {
     assert.match(err.message, /Unknown setting: "nonsense"/)
-    assert.match(err.message, /chat, chunkSize, concurrency, limit, verbose/)
+    assert.match(err.message, /chat, chunkSize, uploadConcurrency, downloadConcurrency, limit, verbose/)
     return true
   })
 })

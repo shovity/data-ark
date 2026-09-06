@@ -31,12 +31,23 @@ test('no arguments shows the help', () => {
 })
 
 test('the accompanying flags are parsed', () => {
-  const r = route(['data.tar', '--to', '@my_backups', '--chunk-size', '1.8GB', '--concurrency', '4'])
+  const r = route([
+    'data.tar',
+    '--to',
+    '@my_backups',
+    '--chunk-size',
+    '1.8GB',
+    '--upload-concurrency',
+    '4',
+    '--download-concurrency',
+    '2',
+  ])
   assert.equal(r.command, 'upload')
   assert.deepEqual(r.args, ['data.tar'])
   assert.equal(r.options.to, '@my_backups')
   assert.equal(r.options['chunk-size'], '1.8GB')
-  assert.equal(r.options.concurrency, '4')
+  assert.equal(r.options['upload-concurrency'], '4')
+  assert.equal(r.options['download-concurrency'], '2')
 })
 
 test('the --out flag belongs to restore', () => {

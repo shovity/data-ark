@@ -7,7 +7,20 @@ export const MAX_PARTS = 4000
 export const SLICE_SIZE = 8 * 1024 * 1024
 export const MAX_CHUNK_SIZE = 1950 * 1024 * 1024
 export const DEFAULT_CHUNK_SIZE = 1800 * 1024 * 1024
-export const DEFAULT_CONCURRENCY = 8
+// Upload counts 512KB parts and download counts 8MB slices, so one number cannot serve both.
+// Measured on a 1Gb/s line against a single 1800MB chunk, so every run transfers for three
+// to five minutes rather than the seconds a burst benchmark samples — the distinction the
+// parallel-download spec insists on, and it matters: measured in 20s bursts the download
+// order came out reversed, with 4 apparently the fastest value.
+//   upload     16 -> 7.7 MB/s (234s), 32 -> 9.4 (193s), 64 -> 9.5 (191s)
+//   download    4 -> 5.8 MB/s (311s),  8 -> 6.0 (300s), 16 -> 6.0 (302s)
+// Upload takes 32 because 64 measures the same speed (1% apart, inside the noise) at twice
+// the cost: 64 puts 32MB in flight, and a batch's last part then needs 4.4 Mbps to land
+// before the 60s stall deadline, against 2.1 Mbps at 32. A slow link would be told its
+// transfer stalled while it was merely slow, which is the one thing that deadline must not say.
+// Download takes 8 for the same reason from the other side: 16 buys nothing and 4 is slower.
+export const DEFAULT_UPLOAD_CONCURRENCY = 32
+export const DEFAULT_DOWNLOAD_CONCURRENCY = 8
 export const MAX_CONCURRENCY = 64
 
 // Every chunk is one message in the chat and one entry in the manifest, so a plan this long

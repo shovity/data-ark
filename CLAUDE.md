@@ -139,15 +139,24 @@ has one definition rather than three — two definitions is how a `config` comma
 about what will actually happen. Precedence is flag, then the stored setting, then the
 built-in default; **flags never write**, and the `config` command is the only thing that does.
 
+Upload and download carry their own concurrency because the same number means different things
+to each: upload counts 512KB parts, download counts 8MB slices. One value shared between them
+would hold sixteen times as much in flight on a restore as on an upload, and each slot raises
+the bandwidth a link must sustain for a batch's last request to arrive inside the 60-second
+stall deadline — 32 upload slots need 2.1 Mbps, 64 need 4.4. That floor is why the upload
+default is 32 rather than the 64 that measured marginally faster: a slow link would be told
+its transfer stalled when it was merely slow, which is the one thing that deadline must never
+say. `src/chunking.js` carries the measurements behind both numbers.
+
 The boundary rule extends to whose fault an error is. A value that will not parse is reported
-against where it came from — `Invalid --concurrency: "0"` for a flag, `Invalid concurrency in
-~/.telstore/config.json: "0"` for a stored one — because naming a flag nobody typed sends the
-reader after the wrong thing. The same reasoning killed the old resume message: *"run again
-without `--to`"* is no help to someone whose destination came from the config, so it names the
-chat to pass instead, which is right whatever the source. `runStatus` is the exception that
-proves the rule: it is what someone runs *because* something is already wrong, so a setting it
-cannot parse is printed in its own row rather than thrown, leaving the account line and the
-unfinished backups readable.
+against where it came from — `Invalid --upload-concurrency: "0"` for a flag, `Invalid
+uploadConcurrency in ~/.telstore/config.json: "0"` for a stored one — because naming a flag
+nobody typed sends the reader after the wrong thing. The same reasoning killed the old resume
+message: *"run again without `--to`"* is no help to someone whose destination came from the
+config, so it names the chat to pass instead, which is right whatever the source. `runStatus`
+is the exception that proves the rule: it is what someone runs *because* something is already
+wrong, so a setting it cannot parse is printed in its own row rather than thrown, leaving the
+account line and the unfinished backups readable.
 
 `src/caption.js` also owns the shape of what the chat shows. Captions are plain text:
 no parse mode, so no file name ever has to be escaped. The `#telstore` tag lives on the

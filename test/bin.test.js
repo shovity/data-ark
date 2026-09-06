@@ -136,7 +136,7 @@ test('config writes a setting and reads it back through the real argv', async ()
     assert.equal(get.stdout.trim(), '-1001234567890')
 
     const list = await run(process.execPath, [BIN, 'config'], { env })
-    assert.match(list.stdout, /concurrency\s+8\s+\(default\)/)
+    assert.match(list.stdout, /uploadConcurrency\s+32\s+\(default\)/)
 
     const stored = JSON.parse(await fs.readFile(path.join(home, '.telstore', 'config.json'), 'utf8'))
     assert.deepEqual(stored, { settings: { chat: -1001234567890 } })

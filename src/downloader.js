@@ -4,7 +4,7 @@ import { promisify } from 'node:util'
 
 import { returnBigInt } from 'telegram/Helpers.js'
 
-import { DEFAULT_CONCURRENCY, PART_SIZE, SLICE_SIZE } from './chunking.js'
+import { DEFAULT_DOWNLOAD_CONCURRENCY, PART_SIZE, SLICE_SIZE } from './chunking.js'
 import { withRetry } from './retry.js'
 import { DEFAULT_STALL_MS, withStallTimeout } from './stall.js'
 
@@ -57,7 +57,7 @@ export async function downloadToFile(
   client,
   message,
   fd,
-  { offset, onProgress, retryOptions, concurrency = DEFAULT_CONCURRENCY, stallMs = DEFAULT_STALL_MS } = {},
+  { offset, onProgress, retryOptions, concurrency = DEFAULT_DOWNLOAD_CONCURRENCY, stallMs = DEFAULT_STALL_MS } = {},
 ) {
   const document = message?.media?.document
 

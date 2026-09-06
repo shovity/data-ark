@@ -14,7 +14,8 @@ const SUBCOMMANDS = new Set([
 const OPTIONS = {
   to: { type: 'string' },
   'chunk-size': { type: 'string' },
-  concurrency: { type: 'string' },
+  'upload-concurrency': { type: 'string' },
+  'download-concurrency': { type: 'string' },
   out: { type: 'string' },
   limit: { type: 'string' },
   verbose: { type: 'boolean' },
@@ -40,23 +41,25 @@ Settings:
   npx telstore config <name> <value>      Change it for good
   npx telstore config <name> --unset      Drop it and fall back to the default
 
-  chat          Where backups go: @username, -100123..., or me. No default.
-  chunkSize     Size of each chunk, default 1800MB. Examples: 1.8GB, 500MB.
-  concurrency   512KB parts sent in parallel, default 8, max 64. Upload only.
-  limit         How many backups list shows, default 20.
-  verbose       Show Telegram connection logs, default false.
+  chat                 Where backups go: @username, -100123..., or me. No default.
+  chunkSize            Size of each chunk, default 1800MB. Examples: 1.8GB, 500MB.
+  uploadConcurrency    512KB parts sent in parallel, default 32, max 64.
+  downloadConcurrency  8MB slices fetched in parallel, default 8, max 64.
+  limit                How many backups list shows, default 20.
+  verbose              Show Telegram connection logs, default false.
 
 Options apply to one run and are never saved. Use config to change a setting for good.
-  --to <chat>            Destination for this run only.
-  --chunk-size <n>       Chunk size for this run only. An unfinished backup keeps the size
-                         it started with.
-  --concurrency <n>      Parts in parallel for this run only. Upload only — restore always
-                         downloads with its own fixed pool of workers.
-  --out <path>           Where to write the restored file. Defaults to the basename in the manifest.
-  --limit <n>            How many backups list shows this run.
-  --yes                  Delete without asking to confirm first.
-  --verbose              Show Telegram connection logs for this run.
-  -h, --help             Show this help.
+  --to <chat>                 Destination for this run only.
+  --chunk-size <n>            Chunk size for this run only. An unfinished backup keeps the
+                              size it started with.
+  --upload-concurrency <n>    512KB parts in parallel while uploading, this run only.
+  --download-concurrency <n>  8MB slices in parallel while restoring, this run only.
+  --out <path>                Where to write the restored file. Defaults to the basename in
+                              the manifest.
+  --limit <n>                 How many backups list shows this run.
+  --yes                       Delete without asking to confirm first.
+  --verbose                   Show Telegram connection logs for this run.
+  -h, --help                  Show this help.
 `
 
 // What Ctrl-C means depends on the command that was running: upload has written every

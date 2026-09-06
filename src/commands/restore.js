@@ -28,8 +28,8 @@ async function realGetMessage(client, peer, msgId) {
   return message ?? null
 }
 
-export async function realDownloadChunk(client, message, handle, offset, onProgress, retryOptions) {
-  return await downloadToFile(client, message, handle.fd, { offset, onProgress, retryOptions })
+export async function realDownloadChunk(client, message, handle, offset, onProgress, options) {
+  return await downloadToFile(client, message, handle.fd, { offset, onProgress, ...options })
 }
 
 // manifest.name comes from data downloaded off Telegram — don't trust it when picking
@@ -165,7 +165,10 @@ export async function runRestore(backupId, options = {}, deps = {}) {
             handle,
             chunk.i * manifest.chunkSize,
             progress.advance,
-            { ...retryOptions, onRetry },
+            {
+              retryOptions: { ...retryOptions, onRetry },
+              concurrency: settings.downloadConcurrency,
+            },
           )
 
           if (size !== chunk.size) {
