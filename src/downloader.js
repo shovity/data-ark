@@ -6,6 +6,7 @@ import { returnBigInt } from 'telegram/Helpers.js'
 
 import { DEFAULT_CONCURRENCY, PART_SIZE, SLICE_SIZE } from './chunking.js'
 import { withRetry } from './retry.js'
+import { DEFAULT_STALL_MS, withStallTimeout } from './stall.js'
 
 const write = promisify(writeCallback)
 const read = promisify(readCallback)
@@ -56,7 +57,7 @@ export async function downloadToFile(
   client,
   message,
   fd,
-  { offset, onProgress, retryOptions, concurrency = DEFAULT_CONCURRENCY } = {},
+  { offset, onProgress, retryOptions, concurrency = DEFAULT_CONCURRENCY, stallMs = DEFAULT_STALL_MS } = {},
 ) {
   const document = message?.media?.document
 
@@ -90,11 +91,30 @@ export async function downloadToFile(
     let done = 0
 
     await withRetry(async () => {
-      for await (const buffer of client.iterDownload({
+      // Iterated by hand rather than with `for await` so each part can be given a deadline:
+      // a stalled stream yields nothing and raises nothing, and only a race against a timer
+      // turns that silence into an error withRetry can act on. Nothing is lost by stepping
+      // outside `for await` — GramJS's download iterator exposes `next` alone, so breaking
+      // out of the loop never closed anything either.
+      const stream = client.iterDownload({
         file: message.media,
         offset: returnBigInt(start + done),
         requestSize: PART_SIZE,
-      })) {
+      })
+      const parts = stream[Symbol.asyncIterator]()
+
+      for (;;) {
+        const { value: buffer, done: ended } = await withStallTimeout(
+          parts.next(),
+          stallMs,
+          () =>
+            `Telegram stopped sending slice ${index + 1}/${sliceCount} of message ` +
+            `${message?.id}: nothing arrived for ${Math.round(stallMs / 1000)}s after ` +
+            `${done} of ${length} bytes.`,
+        )
+
+        if (ended) break
+
         // The stream runs to the end of the document; this slice stops at its own boundary.
         const take = Math.min(buffer.length, length - done)
 

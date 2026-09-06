@@ -745,3 +745,63 @@ test('a mid-document slice offset is one GramJS itself accepts', async () => {
   // direct one only ever begins at zero.
   assert.equal(iter.constructor.name, 'GenericDownloadIter')
 })
+
+// A hung request is not a slow one: GramJS can leave a request in a send queue nothing is
+// draining, and that promise never settles either way. Without a stall guard the await
+// never returns, withRetry never sees an error, and the restore ends without a word.
+test('a stream that stops yielding fails instead of waiting forever', async () => {
+  const { handle } = await tempFd(1500)
+  const client = {
+    iterDownload() {
+      return { [Symbol.asyncIterator]: () => ({ next: () => new Promise(() => {}) }) }
+    },
+  }
+
+  await assert.rejects(
+    () =>
+      downloadToFile(client, fakeMessage(1500), handle.fd, {
+        offset: 0,
+        stallMs: 20,
+        retryOptions: { attempts: 2, baseDelayMs: 1 },
+      }),
+    /stopped sending/,
+  )
+
+  await handle.close()
+})
+
+// The guard must fire on silence, not on slowness: a link that keeps delivering, however
+// slowly, is a link that is working. Killing it would turn a slow restore into a failed one.
+//
+// The whole stream here takes about 90ms against a 50ms window, so a deadline measured over
+// the slice rather than over each part would trip. `attempts: 1` is what makes that visible:
+// with retries left, a wrongly-tripped guard just starts another stream and the download
+// still finishes, which is why the stream count is asserted too.
+test('a slow but steady stream is not mistaken for a stalled one', async () => {
+  const content = randomBytes(1500)
+  const { file, handle } = await tempFd(1500)
+  let streams = 0
+  const client = {
+    iterDownload({ offset }) {
+      streams += 1
+      const from = Number(offset ?? 0)
+
+      return (async function* () {
+        for (let at = from; at < content.length; at += 500) {
+          await new Promise((resolve) => setTimeout(resolve, 30))
+          yield content.subarray(at, at + 500)
+        }
+      })()
+    },
+  }
+
+  await downloadToFile(client, fakeMessage(1500), handle.fd, {
+    offset: 0,
+    stallMs: 50,
+    retryOptions: { attempts: 1 },
+  })
+
+  await handle.close()
+  assert.equal(streams, 1)
+  assert.deepEqual(await fs.readFile(file), content)
+})

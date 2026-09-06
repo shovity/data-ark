@@ -350,3 +350,27 @@ test('a read error mid-batch produces no unhandledRejection that hides the real 
     await handle.close()
   }
 })
+
+// The mirror of the download path's stall guard. A part left on a sender GramJS has stopped
+// draining never resolves and never rejects, so without a deadline the batch's Promise.all
+// waits forever, nothing is printed, and the upload ends when the event loop runs dry.
+test('a part Telegram never acknowledges fails instead of waiting forever', async () => {
+  const { handle } = await tempFile(randomBytes(1024))
+  const client = { invoke: () => new Promise(() => {}) }
+
+  await assert.rejects(
+    () =>
+      uploadRange(client, handle.fd, {
+        offset: 0,
+        length: 1024,
+        fileName: 'stuck.bin',
+        partSize: 512,
+        concurrency: 2,
+        stallMs: 20,
+        retryOptions: { attempts: 2, baseDelayMs: 1 },
+      }),
+    /stopped acknowledging/,
+  )
+
+  await handle.close()
+})

@@ -40,6 +40,18 @@ for this and must not be relaxed to make a test pass:
 - `runRestore` writes to `<target>.partial`, verifies every chunk's size and sha256
   plus the final file length, and renames only after all of it passes.
 
+The rule also covers a transfer that stops without failing. GramJS can leave a request on a
+sender it has quietly given up reconnecting, and that promise never settles either way: its
+own abort path is unreachable (`MTProtoSender` rejects pending states only when
+`_currentRetries > _reconnectRetries`, and `reconnectRetries` has no default to compare
+against), and `_reconnect()` treats a `connect()` that merely returned false as success. A
+real network cut mid-restore was reproduced this way: on Linux the transfer froze for eleven
+minutes and then recovered, on Windows the process ended mid-chunk without printing a line.
+`src/stall.js` is what makes that impossible — every network wait carries a 60-second
+deadline, so silence becomes an error `withRetry` can announce and act on. Its timer is
+deliberately not `unref`'d: it is the handle that keeps the event loop from running dry and
+exiting without a word.
+
 The same rule covers the local record of a backup, because losing it strands chunks in the
 chat that nothing can point at any more: `runUpload` refuses a `--chunk-size` that differs
 from the unfinished backup's own (and resumes at that size when the flag is absent) rather
@@ -60,7 +72,7 @@ be served from the page cache.
 
 `src/commands/*.js` own the user-facing narrative. `src/caption.js`,
 `src/chunking.js`, `src/manifest.js`, `src/progress.js`, `src/retry.js`,
-`src/state.js` and `src/config.js` are pure enough to test without a client.
+`src/stall.js`, `src/state.js` and `src/config.js` are pure enough to test without a client.
 
 `src/caption.js` also owns the shape of what the chat shows. Captions are plain text:
 no parse mode, so no file name ever has to be escaped. The `#dataark` tag lives on the
@@ -92,12 +104,18 @@ releasing — upload and restore a file large enough to need several chunks abov
   `SaveFilePart` / `InputFile`. Both branches need real-account coverage.
 - `FLOOD_WAIT` is honoured for exactly the seconds the server asks for, and any
   wait over a minute is announced so the user does not read it as a hang.
+- A stalled request is not a failed one, and only the second is something `withRetry` can
+  see. `src/stall.js` gives every network wait 60 seconds of silence before it counts as an
+  error — one 512KB part slower than that means under 8KB/s, which could not finish a
+  multi-gigabyte transfer anyway. Measured per part, never per slice: a link delivering
+  slowly is a link that works, and killing it would turn a slow restore into a failed one.
 - `src/retry.js` governs both upload and download with the same policy: 8 attempts,
   the exponential branch capped at 30s because past that point doubling again buys
   nothing — the far side has either recovered or is not coming back on this attempt,
   and an uncapped eighth attempt would mean a two-minute stare at a frozen bar.
   `FLOOD_WAIT` is the one exception to the cap: it is still waited out in full for
   exactly the seconds the server names, because guessing short would just draw
-  another `FLOOD_WAIT`. Together this tolerates a stalled stretch of roughly 91
-  seconds (1 + 2 + 4 + 8 + 16 + 30 + 30 seconds across the backoff, plus the final
-  attempt) before giving up and failing loudly rather than hanging indefinitely.
+  another `FLOOD_WAIT`. The backoff itself adds up to 91 seconds (1 + 2 + 4 + 8 + 16 + 30 +
+  30), and with the stall deadline spending up to a minute on each of the eight attempts an
+  outage of roughly nine minutes is survived — announced once a minute throughout, so it
+  never reads as a hang — before the transfer gives up and fails loudly.

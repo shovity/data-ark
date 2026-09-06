@@ -7,6 +7,7 @@ import { readBigIntFromBuffer } from 'telegram/Helpers.js'
 
 import { DEFAULT_CONCURRENCY, PART_SIZE, MAX_PARTS } from './chunking.js'
 import { withRetry } from './retry.js'
+import { DEFAULT_STALL_MS, withStallTimeout } from './stall.js'
 
 const read = promisify(readCallback)
 
@@ -42,6 +43,7 @@ export async function uploadRange(client, fd, options) {
     partSize = PART_SIZE,
     onProgress,
     retryOptions,
+    stallMs = DEFAULT_STALL_MS,
   } = options
 
   const totalParts = Math.ceil(length / partSize)
@@ -90,7 +92,20 @@ export async function uploadRange(client, fd, options) {
         // an already-pushed promise with no handler becomes an unhandledRejection and
         // hides the real error.
         sending.push(
-          withRetry(() => client.invoke(partRequest(part, bytes)), retryOptions).then(
+          withRetry(
+            () =>
+              // Same exposure as the download path: a request left on a sender GramJS has
+              // stopped draining never settles, so without a deadline this await would hold
+              // the batch open forever and the upload would end without a word.
+              withStallTimeout(
+                client.invoke(partRequest(part, bytes)),
+                stallMs,
+                () =>
+                  `Telegram stopped acknowledging part ${part + 1}/${totalParts} of ` +
+                  `${fileName}: nothing back for ${Math.round(stallMs / 1000)}s.`,
+              ),
+            retryOptions,
+          ).then(
             () => onProgress?.(partLength),
             (err) => {
               // Not `sendError ??= err`: if the rejection reason is falsy
