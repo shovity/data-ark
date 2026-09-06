@@ -31,10 +31,10 @@ export const HELP = `telstore — split large files into chunks and store them o
 
 Usage:
   npx telstore login                      Log in to Telegram, only needed once
-  npx telstore <file> [file...]           Split files and upload them to Telegram
+  npx telstore <file|folder|pattern>...   Split files and upload them to Telegram
   npx telstore list                       List the backups stored in the destination
-  npx telstore restore <backup-id>        Download the chunks and reassemble the file
-  npx telstore delete <backup-id>         Remove a backup's chunks and manifest from the chat
+  npx telstore restore <backup-id>...     Download the chunks and reassemble the files
+  npx telstore delete <backup-id>...      Remove backups' chunks and manifests from the chat
   npx telstore status                     Show the account, the destination and unfinished backups
   npx telstore config                     Show every setting and where its value comes from
   npx telstore logout                     Remove the saved session
@@ -44,7 +44,13 @@ Running on a machine you do not trust:
   npx telstore login --token              Log in there by pasting one, session stays sealed
 
 Several files in one run go one after another over a single connection, each becoming its own
-backup. Run telstore again with only the files that are left to carry on after an interruption.
+backup. A folder means the files one level inside it, and a pattern means the names it matches
+— the shell usually expands those itself, so quote one to hand it to telstore intact. More than
+one file is listed and confirmed before the first byte goes out. Run telstore again with only
+the files that are left to carry on after an interruption.
+
+restore and delete take several ids the same way: one connection, one line each, and an exit
+code that reports any that failed. delete shows everything it is about to destroy and asks once.
 
 Settings:
   npx telstore config <name>              Print one setting's value
@@ -65,13 +71,13 @@ Options apply to one run and are never saved. Use config to change a setting for
   --upload-concurrency <n>    512KB parts in parallel while uploading, this run only.
   --download-concurrency <n>  8MB slices in parallel while restoring, this run only.
   --out <path>                Where to write the restored file. Defaults to the basename in
-                              the manifest.
+                              the manifest, and works with one backup id only.
   --limit <n>                 How many backups list shows this run.
   --token                     Log in by pasting a session token. It takes no value on
                               purpose: a token written on the command line would sit in
                               "ps" for the whole life of the command, and stay in that
                               machine's shell history afterwards.
-  --yes                       Delete without asking to confirm first.
+  --yes                       Upload a batch, or delete, without being asked to confirm.
   --verbose                   Show Telegram connection logs for this run.
   -h, --help                  Show this help.
 `

@@ -116,9 +116,11 @@ async function main() {
         throw new Error('Missing backup id. Example: npx telstore restore telstore-20260905-7f3a91')
       }
 
-      const { runRestore } = await import('../src/commands/restore.js')
+      const { runRestores } = await import('../src/commands/restore.js')
 
-      await runRestore(parsed.args[0], parsed.options)
+      const { failed } = await runRestores(parsed.args, parsed.options)
+
+      if (failed > 0) process.exitCode = 1
       return
     }
 
@@ -127,9 +129,11 @@ async function main() {
         throw new Error('Missing backup id. Example: npx telstore delete telstore-20260905-7f3a91')
       }
 
-      const { runDelete } = await import('../src/commands/delete.js')
+      const { runDeletes } = await import('../src/commands/delete.js')
 
-      await runDelete(parsed.args[0], parsed.options)
+      const { failed } = await runDeletes(parsed.args, parsed.options)
+
+      if (failed > 0) process.exitCode = 1
       return
     }
 

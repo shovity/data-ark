@@ -15,6 +15,7 @@ npx telstore login                             # once only
 npx telstore config chat @my_backups           # where backups go, from now on
 npx telstore data.tar                          # split it and send it there
 npx telstore a.tar b.tar c.tar                 # or several: one backup each, one after another
+npx telstore ./backups                         # or a folder: every file one level inside it
 npx telstore list                              # what is already in the destination
 npx telstore restore telstore-20260905-7f3a91
 ```
@@ -24,10 +25,10 @@ npx telstore restore telstore-20260905-7f3a91
 | Command | What it does |
 |---|---|
 | `telstore login` | Log in to Telegram. Add `--token` to log in with a session token instead. |
-| `telstore <file> [file...]` | Split each file and upload it. Prints the `backupId` you restore with. |
+| `telstore <file\|folder\|pattern>...` | Split each file and upload it. Prints the `backupId` you restore with. |
 | `telstore list` | The backups stored in the destination, newest first. |
-| `telstore restore <backup-id>` | Download every chunk and reassemble the file. |
-| `telstore delete <backup-id>` | Remove a backup's chunks and manifest from the chat, for good. |
+| `telstore restore <backup-id>...` | Download every chunk and reassemble the file. Several ids run one after another. |
+| `telstore delete <backup-id>...` | Remove a backup's chunks and manifest from the chat, for good. Several ids are listed and confirmed once. |
 | `telstore status` | Account, destination, and unfinished backups. |
 | `telstore config` | Show or change settings. |
 | `telstore token` | Print a session token for a machine you do not trust. |
@@ -55,7 +56,8 @@ npx telstore config chunkSize --unset  # back to the default
 | `verbose` | `--verbose` | off | Show the Telegram client's own connection logs |
 
 Three flags have no setting behind them: `--out <path>` names where one restore writes,
-`--yes` skips the confirmation `delete` asks, and `--token` takes no value — a token written
+`--yes` skips the confirmation an upload batch and `delete` ask for, and `--token` takes no
+value — a token written
 on the command line would sit in `ps` and in that machine's shell history, so it is pasted at
 a prompt that does not echo.
 
@@ -79,9 +81,33 @@ telstore-20260901-9de447  photos.zip  940.3 MB       1  2026-09-01
 
 `telstore a.tar b.tar c.tar` uploads them one after another over a single connection. Each
 file becomes its own backup with its own `backupId`, exactly as three separate runs would
-have produced. Names that do not exist, and a file named twice, are refused before the first
-byte goes out; a file that fails mid-transfer does not stop the ones after it, and the run
-ends with a line per file and a non-zero exit code:
+have produced.
+
+A **folder** stands for the files one level inside it — subfolders are named on screen and
+left alone, hidden files are skipped. A **pattern** stands for the names it matches:
+
+```bash
+npx telstore ./backups            # every file directly inside ./backups
+npx telstore 'logs/*.tar'         # quoted, so telstore matches it rather than the shell
+npx telstore logs/abc*            # unquoted: your shell expands it first, same result
+```
+
+More than one file is listed, added up and confirmed before the first byte goes out:
+
+```
+3 files, 4.20 GB, to https://web.telegram.org/k/#@my_backups
+
+  a.tar  1.20 GB
+  b.tar  2.00 GB
+  c.tar  1.00 GB
+
+Upload these 3 files? [y/N]
+```
+
+`--yes` skips the question; without a terminal to ask in, the run stops and says so rather
+than reading an empty line as "no". Names that do not exist, and a file named twice, are
+refused before anything is sent; a file that fails mid-transfer does not stop the ones after
+it, and the run ends with a line per file and a non-zero exit code:
 
 ```
 3 files: 2 uploaded, 1 failed.
@@ -90,6 +116,21 @@ ends with a line per file and a non-zero exit code:
   b.tar  failed: connection dropped mid-transfer
   c.tar  telstore-20260905-9de447  (1 chunk)
 ```
+
+## Several backups at once
+
+`restore` and `delete` take a list of ids the same way, over one connection, with a summary
+and a non-zero exit code if any of them failed:
+
+```bash
+npx telstore restore telstore-20260905-7f3a91 telstore-20260901-9de447
+npx telstore delete telstore-20260905-7f3a91 telstore-20260901-9de447
+```
+
+With several ids, `restore` writes each file under the name in its own manifest, so `--out`
+— which names exactly one file — is refused rather than quietly used three times. `delete`
+looks every id up first and shows the whole list before asking once; an id that is nowhere to
+be found stops the run before anything is destroyed.
 
 ## Resuming an upload
 

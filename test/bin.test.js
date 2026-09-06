@@ -77,6 +77,27 @@ test('a second file on the command line is uploaded, not dropped', async () => {
   assert.equal(stdout, '')
 })
 
+test('restore refuses --out for several ids before it opens a socket', async () => {
+  // The same isolated HOME as above: a stand-in session that only has to get past the login
+  // check, since the run stops on the flag well before anything would use it.
+  const home = await tempDir('restore-many-bin')
+  await fs.mkdir(path.join(home, '.telstore'), { recursive: true })
+  await fs.writeFile(
+    path.join(home, '.telstore', 'config.json'),
+    JSON.stringify({ session: 's', apiId: 1, apiHash: 'h', settings: { chat: 'me' } }),
+  )
+
+  const { stdout, stderr } = await run(
+    process.execPath,
+    [BIN, 'restore', 'telstore-20260905-7f3a91', 'telstore-20260905-9de447', '--out', 'one.tar'],
+    { env: { ...process.env, HOME: home } },
+  ).catch((err) => ({ stdout: err.stdout ?? '', stderr: err.stderr ?? '' }))
+
+  assert.match(stderr, /--out names one file/)
+  assert.doesNotMatch(stderr, /at .*\.js:\d+/)
+  assert.equal(stdout, '')
+})
+
 test(
   'SIGINT during login: exits 130 without claiming anything false about progress',
   { timeout: 10_000 },

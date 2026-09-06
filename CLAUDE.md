@@ -126,6 +126,28 @@ removed that the user did not ask for, nothing reported gone that is still there
   Ctrl-C mid-batch is the one place the old wording turned into a lie: the finished files have
   had their records cleared, so `interruptMessage` names them and asks for the files that are
   left instead of "the same command again".
+- `src/sources.js` turns what was typed into what will be sent: a folder is the files one level
+  inside it, a pattern is the names it matches. The shell expands `*` first and that is the
+  expansion telstore prefers — this one only runs on a pattern that arrived intact, and follows
+  the same rules so a quoted pattern is not a second feature with different answers. One level,
+  never a recursive walk: a home directory would become thousands of backups nobody asked for.
+  Hidden files are skipped as every shell skips them, subfolders are **named on stderr** rather
+  than silently missing from the list, and a folder or pattern that yields nothing is an error —
+  "0 files uploaded" is the silence this project does not do.
+- More than one file is listed with its sizes and confirmed before the first byte goes out, and
+  `--yes` is what a script passes instead. Without a terminal the batch **refuses** rather than
+  reading an empty line as "no": a pipe has no answer to give, and "Cancelled on request" would
+  name a request nobody made. One file short-circuits past all of it — no list, no question.
+- `runRestores` and `runDeletes` mirror `runUploads` exactly: one id short-circuits, several
+  share one connection through the deps seam, pre-flight refuses what is knowable (a duplicate
+  id, `--out` against several ids since it names one file, no login), each failure is named when
+  it happens and again in the summary, and `failed > 0` is exit code 1. `runDeletes` is the one
+  that looks first: it reads every manifest and record **before** asking, so the single question
+  that authorises the whole run can say what all of it is, and an id nothing knows about stops
+  the batch before anything is destroyed. A manifest too damaged to parse costs its row a name,
+  not the run — that broken backup is exactly what somebody is here to remove. Each `runDelete`
+  then runs with `yes: true` and looks its own manifest up again: one extra search and a few KB
+  per backup, in exchange for the most dangerous command in the project keeping its own flow.
 - `src/downloader.js` fetches a chunk as 8MB slices through a pool of concurrent
   `iterDownload` streams — one stream is one request at a time, capping a restore at
   round-trip latency (~3 MB/s). Bytes land out of order, so the chunk's sha256 is taken by
@@ -151,8 +173,9 @@ removed that the user did not ask for, nothing reported gone that is still there
   `config` is the only thing that does. Two definitions of a default is how `config` starts
   lying about what will actually happen.
 - Three flags have no setting behind them, none of them a preference: `--out` names where one
-  restore goes, `--yes` answers a question about one particular backup (stored, it would be
-  standing permission never to ask before destroying one), and `--token` takes **no value** —
+  restore goes (and is refused outright against several ids), `--yes` answers a question about
+  one particular run (stored, it would be standing permission never to ask before destroying
+  a backup), and `--token` takes **no value** —
   a token on the command line sits in `ps` and in shell history, so it is pasted at a prompt
   that does not echo. `login` refuses a positional argument rather than ignoring one.
 - The `--chunk-size` refusal keys off the *source* of the size, not its presence: a config
