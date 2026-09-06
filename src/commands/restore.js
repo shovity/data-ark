@@ -9,6 +9,7 @@ import {
 } from '../client.js'
 import { askConfirm } from '../confirm.js'
 import { configFile, defaultConfigDir, loadConfig } from '../config.js'
+import { assertLoggedIn } from '../session.js'
 import { requireChat, resolveSettings } from '../settings.js'
 import { downloadToFile } from '../downloader.js'
 import { parseManifest } from '../manifest.js'
@@ -215,4 +216,120 @@ export async function runRestore(backupId, options = {}, deps = {}) {
       warn(`\nWarning: could not close the Telegram connection: ${err.message}\n`),
     )
   }
+}
+
+
+// `telstore restore a b c` is three restores, not one download: each backup keeps its own
+// manifest, its own name and its own verification, so a batch is what running the command
+// three times would have produced minus two logins. As with uploads, the connection is shared
+// through the deps seam, which leaves runRestore the only caller of connect.
+export async function runRestores(backupIds, options = {}, deps = {}) {
+  const {
+    connect = realConnect,
+    disconnect = (client) => client.destroy(),
+    configDir = defaultConfigDir(),
+    writeErr = (line) => process.stderr.write(line),
+    log: writeLog = (line) => console.log(line),
+    silent = false,
+  } = deps
+
+  // One id must read exactly as it did before this existed: --out still works, the error still
+  // reaches the caller, and nothing prints a summary of a list with one thing in it.
+  if (backupIds.length === 1) {
+    const { path: target, size } = await runRestore(backupIds[0], options, deps)
+    return { results: [{ id: backupIds[0], path: target, size }], failed: 0 }
+  }
+
+  // Everything knowable before the first byte arrives is settled here, so a batch never stops
+  // halfway over something that was already visible on the command line.
+  if (options.out !== undefined) {
+    throw new Error(
+      `--out names one file, and this run restores ${backupIds.length} backups. Leave it off ` +
+        'to write each one under the name in its own manifest, or restore them one command at ' +
+        'a time to choose the names yourself.',
+    )
+  }
+
+  const duplicate = backupIds.find((id, index) => backupIds.indexOf(id) !== index)
+
+  if (duplicate) {
+    throw new Error(
+      `${duplicate} is named twice. Restoring one backup twice would write the same file ` +
+        'over itself — name it once.',
+    )
+  }
+
+  const config = await loadConfig(configDir)
+
+  // Once for the batch. Reported from inside the loop, "Not logged in" would arrive once per
+  // id, each time as though that particular backup were the problem.
+  assertLoggedIn(config)
+
+  const { values: settings } = resolveSettings(options, config, { file: configFile(configDir) })
+  requireChat(settings)
+
+  const log = silent ? () => {} : writeLog
+  const warn = silent ? () => {} : writeErr
+
+  let shared = null
+  const perId = {
+    ...deps,
+    connect: async (theirConfig, connectOptions) =>
+      (shared ??= await connect(theirConfig, connectOptions)),
+    disconnect: async () => {},
+  }
+
+  const results = []
+
+  try {
+    for (const [index, backupId] of backupIds.entries()) {
+      if (index > 0) log('')
+      log(`[${index + 1}/${backupIds.length}] ${backupId}`)
+
+      try {
+        const { path: target, size } = await runRestore(backupId, options, perId)
+        results.push({ id: backupId, path: target, size })
+      } catch (err) {
+        // A backup whose chunks are gone says nothing about the next one, and the summary at
+        // the end would arrive an hour after the bar of the following id started scrolling
+        // over it — so it is named here, and again down there, and carried out as exit code 1.
+        results.push({ id: backupId, error: err.message })
+        warn(`\n${backupId} failed: ${err.message}\n`)
+      }
+    }
+  } finally {
+    if (shared) {
+      await closeQuietly(shared, disconnect, (err) =>
+        warn(`\nWarning: could not close the Telegram connection: ${err.message}\n`),
+      )
+    }
+  }
+
+  const failed = results.filter((result) => result.error).length
+
+  log('')
+  for (const line of summaryLines(results, failed)) log(line)
+
+  return { results, failed }
+}
+
+// Every id gets a line whether it worked or not: one missing from this list would be a backup
+// nobody could tell the fate of.
+function summaryLines(results, failed) {
+  const width = Math.max(...results.map((result) => result.id.length))
+  const restored = results.length - failed
+
+  const lines = [
+    `${results.length} backups: ${restored} restored, ${failed} failed.`,
+    '',
+    ...results.map((result) => {
+      const id = result.id.padEnd(width)
+
+      return result.error
+        ? `  ${id}  failed: ${result.error}`
+        : `  ${id}  ${result.path} (${formatBytes(result.size)})`
+    }),
+  ]
+
+  return lines
 }
